@@ -1,8 +1,9 @@
 name: Deploy to GitHub Pages
 
+# Runs on any branch push but only deploys the repository's default branch,
+# so a fork whose default branch isn't called "main" still publishes.
 on:
   push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -16,6 +17,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.ref_name == github.event.repository.default_branch
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
