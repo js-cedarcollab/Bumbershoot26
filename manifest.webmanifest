@@ -1,0 +1,14 @@
+{
+  "name": "Bumbershoot 2026 — My Schedule",
+  "short_name": "My Bumbershoot",
+  "description": "Personal Bumbershoot 2026 schedule planner. Picks stay on your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#12141B",
+  "theme_color": "#12141B",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

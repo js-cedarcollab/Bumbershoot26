@@ -1,0 +1,11 @@
+{
+  "name": "bumbershoot-2026-schedule",
+  "version": "1.0.0",
+  "description": "Personal Bumbershoot 2026 schedule planner. Static site, picks stored on device.",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "python3 -m http.server 8000"
+  },
+  "license": "MIT"
+}
