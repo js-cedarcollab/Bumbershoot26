@@ -202,14 +202,21 @@ function rowHtml(item, { conflicts, tight, busy, nowMin }) {
     : "";
 
   const rec = recsById.get(entry.id);
+  // A district-level star belongs to the venue, not to this particular act —
+  // say which, so a starred stage doesn't read as a starred set.
   const recTags = rec
-    ? `${rec.star ? '<span class="rec-tag star">★ Stranger pick</span>' : ""}${
-        rec.local ? '<span class="rec-tag local">Local</span>' : ""
-      }`
+    ? `${
+        rec.star
+          ? `<span class="rec-tag star">★ Stranger pick${rec.stage ? ": this district" : ""}</span>`
+          : ""
+      }${rec.local ? '<span class="rec-tag local">Local</span>' : ""}`
     : "";
-  // Their words, clearly theirs, with a way through to the original.
+  // Their words, clearly theirs. The link back to the article lives in the
+  // credit line under the list, since an anchor can't sit inside this button.
   const blurb = rec?.blurb
-    ? `<span class="rec-blurb">“${escapeHtml(rec.blurb)}” <span class="rec-credit">— The Stranger</span></span>`
+    ? `<span class="rec-blurb">“${escapeHtml(rec.blurb)}” <span class="rec-credit">— ${escapeHtml(
+        rec.author || "The Stranger"
+      )}, The Stranger</span></span>`
     : "";
 
   const walk = tight?.get(entry.id);
@@ -238,6 +245,17 @@ function rowHtml(item, { conflicts, tight, busy, nowMin }) {
       </span>
     </span>
   </button>`;
+}
+
+/** Attribution for the picks overlay, with links back to the source articles. */
+function creditHtml() {
+  if (!recsById.size) return "";
+  return `<div class="credit">
+    Picks, local flags and quotes from <strong>The Stranger</strong> —
+    <a href="${STRANGER_SOURCES.Music.Sat}" target="_blank" rel="noopener">every band Saturday</a> ·
+    <a href="${STRANGER_SOURCES.Music.Sun}" target="_blank" rel="noopener">Sunday</a> ·
+    <a href="${STRANGER_SOURCES.Arts}" target="_blank" rel="noopener">every arts district</a>
+  </div>`;
 }
 
 function nowLineHtml() {
@@ -290,6 +308,7 @@ function render({ preserveScroll = false } = {}) {
     }</div>`;
   }
 
+  html += creditHtml();
   list.innerHTML = html;
   if (preserveScroll) list.scrollTop = previousScroll;
 

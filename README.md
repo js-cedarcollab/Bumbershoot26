@@ -96,18 +96,32 @@ stage — which is also how you get "just comedy", since comedy is a stage here 
 category. Filters compose, and they're view-only: hiding rows never changes which gaps are open or
 which picks clash.
 
-## The Stranger's picks (optional overlay)
+## The Stranger's picks
 
-`js/recs.js` can flag acts that The Stranger starred ("Stranger recommends") or marked as local.
-Fill in `STRANGER_RECS` and star/local badges appear on the rows, along with a **★ Picks / Local**
-filter that composes with the others. Leave it empty and the whole feature stays hidden.
+`js/recs.js` carries The Stranger's Bumbershoot 2026 coverage as an overlay: which acts they
+starred ("Stranger recommends"), which they flagged as local, and a short credited quote from each
+writeup. Rows show ★/Local badges and the quote, a **★ Picks / Local** filter composes with the
+others, and a credit line under the list links back to all three articles. Empty the list and the
+whole feature disappears from the UI.
+
+Two kinds of entry. Most name an act. Those with `stage: true` name one of the arts districts and
+apply to *every* set on that stage — the arts article reviews districts (Comedy Coop, Magic Dome,
+Rooftop District) rather than individual shows. A district star renders as "★ Stranger pick: this
+district" so a starred venue never reads as a starred set, and an act's own rec always wins over
+the district it plays in.
 
 ```js
 const STRANGER_RECS = [
-  { name: "Turnstile",  star: true,              url: STRANGER_SOURCES.Music.Sat },
-  { name: "Oblé Reed",  star: true, local: true, url: STRANGER_SOURCES.Music.Sat },
+  { name: "Turnstile", star: true, url: STRANGER_SOURCES.Music.Sat,
+    author: "Julianne Bell", blurb: "…" },
+  { name: "Comedy Coop", stage: true, star: true, url: STRANGER_SOURCES.Arts,
+    author: "Sam Machkovech", blurb: "…" },
 ];
 ```
+
+Four sets carry no rec, because the articles don't cover them: Hard Maybe, Mofiyah, Noire Svlon and
+Muckleshoot. The Stranger also starred **Yves Tumor**, who isn't in this lineup snapshot at all —
+the Sunday 9:30 PM Mural Stage slot is Tokimonsta here.
 
 Names are matched loosely — casing, punctuation, accents and `&` vs `and` all survive, and "WITCH"
 finds "W.I.T.C.H." One entry covers every set that act plays, which is what you want for the arts
@@ -115,10 +129,10 @@ acts that recur all weekend. Any name matching nothing in the lineup is reported
 console at startup and fails `npm test`, so a typo or a renamed act can't slip through silently.
 
 **On their descriptions.** Which acts got a star is a fact about their coverage; the writing next to
-those stars is their work. Each rec takes a `url` so the app can point readers at the original
-article, and `blurb` exists for a *short* quote if you want one — it renders in quotation marks
-credited to The Stranger. Publishing their descriptions wholesale on a public site is a different
-thing from linking to them, so the shipped file has none.
+those stars is their work. Each rec carries a *short* excerpt rather than the full writeup, rendered
+in quotation marks and credited to the writer who wrote it, plus a `url` so every row's source is a
+click away. If you'd rather ship no quotes at all, delete the `blurb` fields — the stars, local
+flags and filter keep working without them.
 
 ## Editing the lineup
 

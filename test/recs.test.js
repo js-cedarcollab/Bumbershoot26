@@ -54,3 +54,47 @@ test("the shipped rec list, whatever is in it, matches the lineup", () => {
   const { unmatched } = matchRecs(SCHEDULE, STRANGER_RECS);
   assert.deepEqual(unmatched, [], `these rec names match no set: ${unmatched.join(", ")}`);
 });
+
+test("a district rec applies to every set on that stage", () => {
+  const { byId } = matchRecs(SCHEDULE, [{ name: "Comedy Coop", stage: true, star: true }]);
+  const comedy = SCHEDULE.filter((e) => e.stage === "Comedy Coop");
+  assert.ok(comedy.length > 5);
+  for (const entry of comedy) assert.equal(byId.get(entry.id).star, true);
+  assert.equal(byId.size, comedy.length, "it should not leak onto other stages");
+});
+
+test("a district rec finds a stage named more fully in the lineup", () => {
+  const { byId, unmatched } = matchRecs(SCHEDULE, [{ name: "Rooftop District", stage: true, star: true }]);
+  assert.deepEqual(unmatched, []);
+  const rooftop = SCHEDULE.filter((e) => e.stage === "JUXT — Rooftop District");
+  assert.ok(rooftop.length > 0);
+  for (const entry of rooftop) assert.equal(byId.get(entry.id).star, true);
+});
+
+test("an act's own rec wins over the district it plays in, whatever the order", () => {
+  const laff = SCHEDULE.find((e) => e.name === "LAFF-A-BALL");
+  const recs = [
+    { name: "Comedy Coop", stage: true, star: true, blurb: "District blurb." },
+    { name: "LAFF-A-BALL", blurb: "Act blurb." },
+  ];
+  assert.equal(matchRecs(SCHEDULE, recs).byId.get(laff.id).blurb, "Act blurb.");
+  assert.equal(matchRecs(SCHEDULE, recs.reverse()).byId.get(laff.id).blurb, "Act blurb.");
+});
+
+test("a district star is marked as a district star, not an act star", () => {
+  const { byId } = matchRecs(SCHEDULE, STRANGER_RECS);
+  const laff = SCHEDULE.find((e) => e.name === "LAFF-A-BALL");
+  const turnstile = SCHEDULE.find((e) => e.name === "Turnstile");
+  assert.equal(byId.get(laff.id).stage, true);
+  assert.equal(byId.get(turnstile.id).stage, false);
+});
+
+test("the shipped list covers both articles' acts and every district", () => {
+  const { byId } = matchRecs(SCHEDULE, STRANGER_RECS);
+  assert.ok(byId.size > 130, "nearly every set should carry a rec");
+  assert.ok([...byId.values()].filter((r) => r.star).length > 40);
+  assert.ok([...byId.values()].filter((r) => r.local).length > 10);
+  for (const rec of STRANGER_RECS) {
+    assert.ok(rec.blurb && rec.author, `${rec.name} should carry a credited blurb`);
+  }
+});
