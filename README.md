@@ -15,6 +15,11 @@ One caveat worth knowing if you plan weeks ahead: Safari clears site storage aft
 of not visiting a site. Adding the app to your home screen mostly exempts it, and a share link
 doubles as a real backup.
 
+**Two layouts.** Under 900px it's a single day with tabs, sized for a phone. At 900px and up both
+days sit side by side with their own scrolling, the day tabs disappear, and the filters stay open —
+which is the view for planning at home before texting yourself a share link. In Chrome or Edge the
+page can also be installed from the address bar, so it gets its own window and icon.
+
 ## Run it
 
 Locally — any static file server will do:
@@ -90,11 +95,16 @@ which of those slots is still open. The **Free** filter takes it further and sho
 clash with nothing you've picked, so a filled-up day gets shorter as you plan. Drop-ins are left
 out of the calculation on both sides, since their slot moves anyway.
 
-**Search and filters.** Search over artist and stage names (accent-insensitive; `/` focuses it,
-Escape clears). Filter by what you picked (*Have*, *Have + want*), by category (Music/Arts) and by
-stage — which is also how you get "just comedy", since comedy is a stage here rather than a
-category. Filters compose, and they're view-only: hiding rows never changes which gaps are open or
-which picks clash.
+**Search and filters.** The legend is the filter: *Have to see* and *Want to see* are independent
+toggles, and *Conflicts* and *Free time* are whole views that replace a tier selection rather than
+stacking with it. Search covers artist and stage names (accent-insensitive; `/` focuses it, Escape
+clears). Everything else — category, The Stranger's picks, and stage — lives behind a **Filters**
+button that shows how many are active, and is always open on wide screens. Filters compose, and
+they're view-only: hiding rows never changes which gaps are open or which picks clash.
+
+The stage list is grouped into music stages and arts districts, and leaves out venues that host a
+single act — Bumbershoot's own data labels Cat Circus and Una The Mermaid as "stages", where
+filtering by the stage is identical to searching the act. They're still findable in search.
 
 ## The Stranger's picks
 

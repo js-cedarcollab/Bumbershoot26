@@ -62,8 +62,15 @@ h1{
 .dot.conflict{background:var(--conflict); border-radius:50%;}
 .counts{margin-left:auto; color:var(--dim2); font-variant-numeric:tabular-nums;}
 
-main{flex:1; overflow-y:auto; overscroll-behavior:contain; padding-bottom:40px; scroll-behavior:smooth;}
-@media (prefers-reduced-motion:reduce){ main{scroll-behavior:auto;} }
+#board{flex:1; display:flex; min-height:0;}
+.day-col{
+  flex:1; min-width:0; display:none;
+  overflow-y:auto; overscroll-behavior:contain;
+  padding-bottom:40px; scroll-behavior:smooth;
+}
+.day-col.active{display:block;}
+.col-head{display:none;}
+@media (prefers-reduced-motion:reduce){ .day-col{scroll-behavior:auto;} }
 
 .row{
   display:flex; align-items:flex-start; gap:12px;
@@ -382,3 +389,73 @@ mark{background:rgba(255,210,63,.22); color:inherit; border-radius:2px;}
 }
 .credit a{color:var(--dim); text-decoration:underline;}
 .credit strong{color:var(--dim); font-weight:600;}
+
+/* ------------------------------------------------ legend as filter controls */
+.legend{gap:6px;}
+.lg-btn{
+  display:inline-flex; align-items:center; gap:5px;
+  background:none; border:1px solid transparent; border-radius:999px;
+  color:var(--dim); font:inherit; font-size:11.5px; font-weight:500;
+  padding:5px 10px; cursor:pointer;
+}
+.lg-btn:hover{color:var(--text);}
+.lg-btn.on{background:var(--row-hover); border-color:var(--line); color:var(--text); font-weight:600;}
+.lg-btn[data-pick="free"]::before{
+  content:""; width:8px; height:8px; border-radius:2px;
+  border:1px solid var(--dim2); display:inline-block;
+}
+
+/* ------------------------------------------------------------ filter panel */
+.filters-btn{
+  flex-shrink:0; display:inline-flex; align-items:center; gap:6px;
+  padding:7px 12px; border-radius:7px;
+  background:var(--row-hover); color:var(--dim);
+  border:1px solid var(--line); font:inherit; font-size:11.5px; font-weight:600;
+  cursor:pointer;
+}
+.filters-btn:hover{color:var(--text);}
+.filters-btn.has-filters{color:var(--text); border-color:var(--dim2);}
+.filters-count{
+  background:var(--have); color:#1A0E0A; border-radius:999px;
+  font-size:10px; font-weight:700; padding:0 5px; line-height:15px; min-width:15px; text-align:center;
+}
+.filter-panel{
+  padding:4px 18px 12px 18px;
+  border-bottom:1px solid var(--line);
+}
+.filter-row{display:flex; align-items:center; gap:10px; margin-top:8px;}
+.filter-label{
+  width:82px; flex-shrink:0;
+  font-size:10px; font-weight:700; letter-spacing:.6px;
+  text-transform:uppercase; color:var(--dim2);
+}
+.filter-panel .stage-filter{max-width:none; flex:1;}
+.filter-reset{
+  margin-top:12px; background:none; border:none; padding:0;
+  color:var(--dim2); font:inherit; font-size:11px; text-decoration:underline; cursor:pointer;
+}
+.filter-reset:hover{color:var(--dim);}
+
+/* --------------------------------------------------------- wide: both days */
+@media (min-width:900px){
+  body{max-width:1180px;}
+  .days{display:none;}                 /* both days are on screen; tabs are noise */
+  .day-col{display:block; border-right:1px solid var(--line);}
+  .day-col:last-child{border-right:none;}
+  .col-head{
+    display:block; position:sticky; top:0; z-index:5;
+    background:var(--bg); border-bottom:1px solid var(--line);
+    padding:10px 18px;
+    font-family:'Big Shoulders Display','Inter',sans-serif;
+    font-weight:700; font-size:15px; letter-spacing:.4px; color:var(--dim);
+  }
+  .day-col.active .col-head{color:var(--text);}
+  .filters-btn{display:none;}          /* the panel is always open at this width */
+  .filter-panel[hidden]{display:block;}
+  .filter-panel .filter-row{display:inline-flex; margin-right:22px;}
+  .filter-panel .filter-label{width:auto;}
+  .filter-reset{display:block;}
+  header{padding-bottom:12px;}
+  .row{padding-left:18px; padding-right:18px;}
+  .credit{padding-bottom:28px;}
+}

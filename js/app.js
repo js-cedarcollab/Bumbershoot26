@@ -96,9 +96,13 @@ let picks = profiles.active ? loadPicksFor(profiles.active) : {};
 let currentDay = "Sat";
 let query = "";
 let category = "All";
-let tierFilter = "all";
+/** Legend toggles: which tiers to show, and the two exclusive special views. */
+let pickSel = new Set();
+let special = null; // null | "free" | "conflict"
 let stageFilter = "All";
 let recFilter = "all";
+/** Both days are on screen at once above this width. */
+const WIDE = "(min-width: 900px)";
 
 /** The Stranger's picks, keyed by entry id. Empty unless js/recs.js is filled in. */
 let recsById = new Map();
@@ -150,21 +154,30 @@ function normalize(text) {
   return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
 }
 
-function matchesFilter(entry, tier, busy) {
+function matchesFilter(entry, tier, busy, conflicts) {
   if (category !== "All" && entry.category !== category) return false;
   if (recFilter !== "all" && !recsById.get(entry.id)?.[recFilter]) return false;
   if (stageFilter !== "All" && entry.stage !== stageFilter) return false;
-  if (tierFilter === "have" && tier !== "have") return false;
-  if (tierFilter === "picked" && !tier) return false;
-  // "Free" is for filling gaps: things you haven't picked that clash with nothing.
-  if (tierFilter === "free" && (tier || busy?.has(entry.id))) return false;
+  // "Free" is for filling gaps: unpicked, and clashing with nothing.
+  if (special === "free" && (tier || busy?.has(entry.id))) return false;
+  if (special === "conflict" && !conflicts?.has(entry.id)) return false;
+  if (pickSel.size && !pickSel.has(tier)) return false;
   if (!query) return true;
   const needle = normalize(query);
   return normalize(entry.name).includes(needle) || normalize(entry.stage).includes(needle);
 }
 
 const filtering = () =>
-  query !== "" || category !== "All" || stageFilter !== "All" || tierFilter !== "all" || recFilter !== "all";
+  query !== "" || category !== "All" || stageFilter !== "All" || recFilter !== "all" || pickSel.size > 0 || special !== null;
+
+/** Filters that live in the collapsed panel, for its badge. */
+const panelFilterCount = () =>
+  (category !== "All" ? 1 : 0) + (stageFilter !== "All" ? 1 : 0) + (recFilter !== "all" ? 1 : 0);
+
+/** The days currently on screen: both when the board is wide, else the active one. */
+function visibleDays() {
+  return matchMedia(WIDE).matches ? ["Sat", "Sun"] : [currentDay];
+}
 
 // ------------------------------------------------------------------ rendering
 
@@ -258,22 +271,42 @@ function creditHtml() {
   </div>`;
 }
 
-function nowLineHtml() {
-  return `<div class="now-line" id="now-line"><span class="now-label">Now</span></div>`;
+function nowLineHtml(day) {
+  return `<div class="now-line" id="now-line-${day}"><span class="now-label">Now</span></div>`;
 }
 
 function render({ preserveScroll = false } = {}) {
-  const list = document.getElementById("list");
-  const previousScroll = list.scrollTop;
+  const totals = { have: 0, want: 0, conflicts: 0, shown: 0, total: 0 };
+  const visible = visibleDays();
+  for (const day of ["Sat", "Sun"]) {
+    const stats = renderDay(day, { preserveScroll });
+    if (!visible.includes(day)) continue;
+    totals.have += stats.have;
+    totals.want += stats.want;
+    totals.conflicts += stats.conflicts;
+    totals.shown += stats.shown;
+    totals.total += stats.total;
+  }
+  updateCounts(totals);
+  updateDayButtons();
+  updateFilterUi();
+  updateJumpButton();
+}
 
-  const nowMin = nowForDay(currentDay);
-  const entries = SCHEDULE.filter((e) => e.day === currentDay);
+/** Draw one day's column. Returns what it holds, for the shared counter. */
+function renderDay(day, { preserveScroll = false } = {}) {
+  const list = document.getElementById(`list-${day}`);
+  const column = list.closest(".day-col");
+  const previousScroll = column.scrollTop;
+
+  const nowMin = nowForDay(day);
+  const entries = SCHEDULE.filter((e) => e.day === day);
 
   // Plan against the whole day: filtering is a view, so hiding rows must never
   // change which gaps are open or which picks clash.
   const { timeline, parked, conflicts, tight, busy } = planDay(entries, picks, nowMin);
-  const shownTimeline = timeline.filter((it) => matchesFilter(it.entry, it.tier, busy));
-  const shownParked = parked.filter((it) => matchesFilter(it.entry, it.tier, busy));
+  const shownTimeline = timeline.filter((it) => matchesFilter(it.entry, it.tier, busy, conflicts));
+  const shownParked = parked.filter((it) => matchesFilter(it.entry, it.tier, busy, conflicts));
 
   const anchor = nowMin == null || filtering() ? null : nowMin - ANCHOR_LOOKBACK;
   let html = "";
@@ -281,13 +314,13 @@ function render({ preserveScroll = false } = {}) {
 
   for (const item of shownTimeline) {
     if (!placedNowLine && item.displayStart >= anchor) {
-      html += nowLineHtml();
+      html += nowLineHtml(day);
       placedNowLine = true;
     }
     html += rowHtml(item, { conflicts, tight, busy, nowMin });
   }
   // Everything today has already started — the anchor sits at the end of the day.
-  if (!placedNowLine) html += nowLineHtml();
+  if (!placedNowLine) html += nowLineHtml(day);
 
   if (shownParked.length) {
     html += `<div class="section-head">
@@ -304,25 +337,28 @@ function render({ preserveScroll = false } = {}) {
 
   if (!shownTimeline.length && !shownParked.length) {
     html = `<div class="empty">Nothing here matching that.${
-      filtering() ? ' <button type="button" class="link-btn" id="clear-filters">Clear filters</button>' : ""
+      filtering() ? ' <button type="button" class="link-btn" data-clear-filters>Clear filters</button>' : ""
     }</div>`;
   }
 
   html += creditHtml();
   list.innerHTML = html;
-  if (preserveScroll) list.scrollTop = previousScroll;
+  if (preserveScroll) column.scrollTop = previousScroll;
 
-  updateCounts(timeline, parked, conflicts, shownTimeline.length + shownParked.length, entries.length);
-  updateUpNext(timeline, nowMin);
-  updateDayButtons();
-  updateJumpButton();
+  updateUpNext(day, timeline, nowMin);
+
+  const all = timeline.concat(parked);
+  return {
+    have: all.filter((it) => it.tier === "have").length,
+    want: all.filter((it) => it.tier === "want").length,
+    conflicts: conflicts.size,
+    shown: shownTimeline.length + shownParked.length,
+    total: entries.length,
+  };
 }
 
-function updateCounts(timeline, parked, conflicts, shown, total) {
-  const all = timeline.concat(parked);
-  const have = all.filter((it) => it.tier === "have").length;
-  const want = all.filter((it) => it.tier === "want").length;
-  const clash = conflicts.size ? ` · ${conflicts.size} clashing` : "";
+function updateCounts({ have, want, conflicts, shown, total }) {
+  const clash = conflicts ? ` · ${conflicts} clashing` : "";
   const picked = have || want ? `${have} have · ${want} want${clash}` : "";
   document.getElementById("counts").textContent = filtering() ? `${shown} of ${total} shown` : picked;
 }
@@ -344,8 +380,8 @@ function updateDayButtons() {
  * The case worth catching is the awkward one — a set you picked begins while
  * another pick is still playing — so the bar says what you'd be walking out of.
  */
-function updateUpNext(timeline, nowMin) {
-  const bar = document.getElementById("upnext");
+function updateUpNext(day, timeline, nowMin) {
+  const bar = document.getElementById(`upnext-${day}`);
   if (nowMin == null) {
     bar.hidden = true;
     return;
@@ -369,7 +405,7 @@ function updateUpNext(timeline, nowMin) {
   bar.hidden = false;
   bar.className = `upnext${clash ? " upnext-clash" : ""}`;
   bar.innerHTML = `
-    <button type="button" class="upnext-body" data-goto="${next.entry.id}">
+    <button type="button" class="upnext-body" data-goto="${next.entry.id}" data-day="${day}">
       <span class="upnext-lead">${next.tier === "have" ? "Have to see" : "Want to see"} · in ${away} min</span>
       <span class="upnext-name">${escapeHtml(next.entry.name)}</span>
       <span class="upnext-where">${formatMin(next.displayStart)} · ${escapeHtml(next.entry.stage)}</span>
@@ -397,22 +433,26 @@ function loadRecs() {
   document.getElementById("rec-filters").hidden = false;
 }
 
-/** Every stage in the lineup, for the stage filter. */
+/** Stage filter, grouped and with the one-act "stages" left out. */
 function populateStages() {
-  const stages = [...new Set(SCHEDULE.map((e) => e.stage))].sort((a, b) => a.localeCompare(b));
-  const select = document.getElementById("stage-filter");
-  select.innerHTML =
-    '<option value="All">All stages</option>' +
-    stages.map((st) => `<option value="${escapeHtml(st)}">${escapeHtml(st)}</option>`).join("");
+  const { music, arts } = stageOptions(SCHEDULE);
+  const group = (label, list) =>
+    list.length
+      ? `<optgroup label="${label}">${list
+          .map((st) => `<option value="${escapeHtml(st)}">${escapeHtml(st)}</option>`)
+          .join("")}</optgroup>`
+      : "";
+  document.getElementById("stage-filter").innerHTML =
+    '<option value="All">Anywhere</option>' + group("Music stages", music) + group("Arts districts", arts);
 }
 
 /** Bring a row into view and flash it, from the up-next bar. */
-function scrollToEntry(id) {
-  const row = document.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
-  const list = document.getElementById("list");
+function scrollToEntry(id, day) {
+  const column = columnFor(day);
+  const row = column?.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
   if (!row) return;
-  const offset = row.getBoundingClientRect().top - list.getBoundingClientRect().top;
-  list.scrollTo({ top: list.scrollTop + offset - list.clientHeight * 0.25, behavior: "smooth" });
+  const offset = row.getBoundingClientRect().top - column.getBoundingClientRect().top;
+  column.scrollTo({ top: column.scrollTop + offset - column.clientHeight * 0.25, behavior: "smooth" });
   row.classList.add("flash");
   setTimeout(() => row.classList.remove("flash"), 1200);
 }
@@ -423,30 +463,39 @@ function updateWho() {
 
 // --------------------------------------------------------------- "now" anchor
 
-function anchorToNow(behavior = "instant") {
-  const line = document.getElementById("now-line");
-  const list = document.getElementById("list");
-  if (!line || nowForDay(currentDay) == null) {
-    list.scrollTo({ top: 0, behavior });
+const columnFor = (day) => document.querySelector(`.day-col[data-day="${day}"]`);
+
+/** Today's column, when it is one of the ones on screen. */
+function todayColumn() {
+  const today = todayDay();
+  return today && visibleDays().includes(today) ? columnFor(today) : null;
+}
+
+function anchorToNow(behavior = "instant", day = todayDay()) {
+  const column = day && columnFor(day);
+  if (!column) return;
+  const line = document.getElementById(`now-line-${day}`);
+  if (!line || nowForDay(day) == null) {
+    column.scrollTo({ top: 0, behavior });
     return;
   }
   // Leave the previous set or two visible above the line. Measured against the
   // scroll container rather than offsetTop, which resolves to the positioned body.
-  const offset = line.getBoundingClientRect().top - list.getBoundingClientRect().top;
-  const target = list.scrollTop + offset - list.clientHeight * 0.22;
-  list.scrollTo({ top: Math.max(0, target), behavior });
+  const offset = line.getBoundingClientRect().top - column.getBoundingClientRect().top;
+  const target = column.scrollTop + offset - column.clientHeight * 0.22;
+  column.scrollTo({ top: Math.max(0, target), behavior });
 }
 
 function updateJumpButton() {
   const btn = document.getElementById("jump-now");
-  const line = document.getElementById("now-line");
-  const list = document.getElementById("list");
-  if (!line || nowForDay(currentDay) == null) {
+  const column = todayColumn();
+  const line = column && document.getElementById(`now-line-${column.dataset.day}`);
+  if (!line) {
     btn.classList.remove("show");
     return;
   }
-  const offset = line.getBoundingClientRect().top - list.getBoundingClientRect().top;
-  const visible = offset > -40 && offset < list.clientHeight - 40;
+  const offset = line.getBoundingClientRect().top - column.getBoundingClientRect().top;
+  const visible = offset > -40 && offset < column.clientHeight - 40;
   btn.classList.toggle("show", !visible);
 }
 
@@ -620,40 +669,69 @@ function cycleTier(id) {
 
 function selectDay(day, { anchor = true } = {}) {
   currentDay = day;
+  document.querySelectorAll(".day-col").forEach((col) => col.classList.toggle("active", col.dataset.day === day));
   render();
-  if (anchor && nowForDay(day) != null && !filtering()) anchorToNow();
-  else document.getElementById("list").scrollTo({ top: 0, behavior: "instant" });
+  for (const visible of visibleDays()) {
+    if (anchor && nowForDay(visible) != null && !filtering()) anchorToNow("instant", visible);
+    else columnFor(visible).scrollTo({ top: 0, behavior: "instant" });
+  }
 }
 
 function setQuery(value) {
   query = value;
   document.getElementById("search-clear").hidden = !value;
-  render();
-  if (!filtering() && nowForDay(currentDay) != null) anchorToNow();
-  else document.getElementById("list").scrollTo({ top: 0, behavior: "instant" });
+  afterFilterChange();
 }
 
 function afterFilterChange() {
   render();
-  if (!filtering() && nowForDay(currentDay) != null) anchorToNow();
-  else document.getElementById("list").scrollTo({ top: 0, behavior: "instant" });
+  for (const day of visibleDays()) {
+    if (!filtering() && nowForDay(day) != null) anchorToNow("instant", day);
+    else columnFor(day).scrollTo({ top: 0, behavior: "instant" });
+  }
+}
+
+/** Reflect current filter state on the controls that show it. */
+function updateFilterUi() {
+  document.querySelectorAll(".lg-btn").forEach((b) => {
+    const key = b.dataset.pick;
+    const on = key === "free" || key === "conflict" ? special === key : pickSel.has(key);
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  document.querySelectorAll(".cat-btn").forEach((b) => b.classList.toggle("active", b.dataset.cat === category));
+  document.querySelectorAll(".rec-btn").forEach((b) => b.classList.toggle("active", b.dataset.rec === recFilter));
+  const badge = document.getElementById("filters-count");
+  const count = panelFilterCount();
+  badge.hidden = count === 0;
+  badge.textContent = String(count);
+  document.getElementById("filters-btn").classList.toggle("has-filters", count > 0);
+}
+
+/**
+ * The legend is the filter. Tiers are independent toggles; "free" and
+ * "conflict" are whole views, so they replace a tier selection rather than
+ * stacking with it — "free time among my picks" has no answer.
+ */
+function toggleLegend(key) {
+  if (key === "free" || key === "conflict") {
+    special = special === key ? null : key;
+    if (special) pickSel.clear();
+  } else {
+    special = null;
+    if (pickSel.has(key)) pickSel.delete(key);
+    else pickSel.add(key);
+  }
+  afterFilterChange();
 }
 
 function setCategory(value) {
   category = value;
-  document.querySelectorAll(".cat-btn").forEach((b) => b.classList.toggle("active", b.dataset.cat === value));
-  afterFilterChange();
-}
-
-function setTier(value) {
-  tierFilter = value;
-  document.querySelectorAll(".tier-btn").forEach((b) => b.classList.toggle("active", b.dataset.tier === value));
   afterFilterChange();
 }
 
 function setRec(value) {
   recFilter = value;
-  document.querySelectorAll(".rec-btn").forEach((b) => b.classList.toggle("active", b.dataset.rec === value));
   afterFilterChange();
 }
 
@@ -668,12 +746,10 @@ function clearFilters() {
   query = "";
   document.getElementById("search-clear").hidden = true;
   category = "All";
-  tierFilter = "all";
   stageFilter = "All";
   recFilter = "all";
-  document.querySelectorAll(".rec-btn").forEach((b) => b.classList.toggle("active", b.dataset.rec === "all"));
-  document.querySelectorAll(".cat-btn").forEach((b) => b.classList.toggle("active", b.dataset.cat === "All"));
-  document.querySelectorAll(".tier-btn").forEach((b) => b.classList.toggle("active", b.dataset.tier === "all"));
+  pickSel.clear();
+  special = null;
   document.getElementById("stage-filter").value = "All";
   afterFilterChange();
 }
@@ -730,42 +806,44 @@ function init() {
   clockOverride = readClockOverride();
   pendingImport = readIncomingShare();
 
-  const list = document.getElementById("list");
-  list.addEventListener("click", (event) => {
-    if (event.target.closest("#clear-filters")) {
-      clearFilters();
-      return;
-    }
+  document.getElementById("board").addEventListener("click", (event) => {
+    if (event.target.closest("[data-clear-filters]")) return clearFilters();
+    const jump = event.target.closest("[data-goto]");
+    if (jump) return scrollToEntry(jump.dataset.goto, jump.dataset.day);
     const row = event.target.closest(".row");
     if (row) cycleTier(row.dataset.id);
   });
-  list.addEventListener("scroll", updateJumpButton, { passive: true });
+  document.querySelectorAll(".day-col").forEach((col) => {
+    col.addEventListener("scroll", updateJumpButton, { passive: true });
+  });
 
   document.querySelectorAll(".day-btn").forEach((btn) => {
     btn.addEventListener("click", () => selectDay(btn.dataset.day));
   });
+  document.querySelectorAll(".lg-btn").forEach((btn) => {
+    btn.addEventListener("click", () => toggleLegend(btn.dataset.pick));
+  });
   document.querySelectorAll(".cat-btn").forEach((btn) => {
     btn.addEventListener("click", () => setCategory(btn.dataset.cat));
-  });
-  document.querySelectorAll(".tier-btn").forEach((btn) => {
-    btn.addEventListener("click", () => setTier(btn.dataset.tier));
   });
   document.querySelectorAll(".rec-btn").forEach((btn) => {
     btn.addEventListener("click", () => setRec(btn.dataset.rec));
   });
   const stageSelect = document.getElementById("stage-filter");
   stageSelect.addEventListener("change", () => setStage(stageSelect.value));
-  document.getElementById("upnext").addEventListener("click", (event) => {
-    const btn = event.target.closest("[data-goto]");
-    if (btn) scrollToEntry(btn.dataset.goto);
-  });
 
-  const search = document.getElementById("search");
-  search.addEventListener("input", () => setQuery(search.value.trim()));
-  document.getElementById("search-clear").addEventListener("click", () => {
-    search.value = "";
-    setQuery("");
-    search.focus();
+  const panel = document.getElementById("filter-panel");
+  const panelBtn = document.getElementById("filters-btn");
+  panelBtn.addEventListener("click", () => {
+    panel.hidden = !panel.hidden;
+    panelBtn.setAttribute("aria-expanded", panel.hidden ? "false" : "true");
+  });
+  document.getElementById("filter-reset").addEventListener("click", clearFilters);
+
+  // Crossing the wide/narrow boundary changes which days are on screen.
+  matchMedia(WIDE).addEventListener("change", () => {
+    render();
+    for (const day of visibleDays()) if (nowForDay(day) != null && !filtering()) anchorToNow("instant", day);
   });
 
   document.getElementById("jump-now").addEventListener("click", () => anchorToNow("smooth"));
@@ -811,7 +889,7 @@ function init() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
     render();
-    if (nowForDay(currentDay) != null && !filtering()) anchorToNow();
+    for (const day of visibleDays()) if (nowForDay(day) != null && !filtering()) anchorToNow("instant", day);
   });
 
   // Keep "ended", "on now" and the divider honest without a page reload.

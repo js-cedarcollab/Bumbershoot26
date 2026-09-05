@@ -288,3 +288,36 @@ test("planDay reports busy marks over the real lineup", () => {
   assert.ok(clashing.length > 0);
   for (const e of clashing) assert.deepEqual(busy.get(e.id), { tier: "have", name: "Bikini Kill" });
 });
+
+const { stageOptions } = require("../js/data.js");
+
+test("the stage filter drops venues that host a single act", () => {
+  const { music, arts } = stageOptions(SCHEDULE);
+  const listed = [...music, ...arts];
+  for (const gone of ["Cat Circus", "Una The Mermaid", "BUMBERMANIA!", "Free Range Performances"]) {
+    assert.equal(listed.includes(gone), false, `${gone} hosts one act, so filtering by it is just a search`);
+  }
+});
+
+test("real venues survive, split into music stages and arts districts", () => {
+  const { music, arts } = stageOptions(SCHEDULE);
+  assert.deepEqual(music, ["Fisher Stage", "Mural Stage", "Upper NW Courtyard"]);
+  for (const kept of ["Comedy Coop", "Magic Dome", "JUXT — Rooftop District", "Puppet Playhouse"]) {
+    assert.ok(arts.includes(kept), `${kept} should stay`);
+  }
+  assert.equal(music.some((s) => arts.includes(s)), false, "a stage belongs to one group");
+});
+
+test("a stage is grouped by what it mostly hosts", () => {
+  const made = [
+    { name: "a", stage: "Mostly Music", category: "Music" },
+    { name: "b", stage: "Mostly Music", category: "Music" },
+    { name: "c", stage: "Mostly Music", category: "Arts" },
+    { name: "d", stage: "Mostly Arts", category: "Arts" },
+    { name: "e", stage: "Mostly Arts", category: "Arts" },
+    { name: "f", stage: "Solo Act", category: "Arts" },
+  ];
+  const { music, arts } = stageOptions(made);
+  assert.deepEqual(music, ["Mostly Music"]);
+  assert.deepEqual(arts, ["Mostly Arts"]);
+});

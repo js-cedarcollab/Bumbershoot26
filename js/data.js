@@ -219,5 +219,33 @@ const SCHEDULE = RAW.map((r) => ({
 })).sort((a, b) => a.startMin - b.startMin || a.name.localeCompare(b.name));
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { RAW, SCHEDULE, FLEXIBLE_KEYS, parseMin, formatMin, slugify };
+  module.exports = { RAW, SCHEDULE, FLEXIBLE_KEYS, parseMin, formatMin, slugify, stageOptions };
+}
+
+/**
+ * Stages worth offering as a filter, split into real music stages and the arts
+ * districts, each sorted.
+ *
+ * Bumbershoot's own data labels some one-act attractions as "stages" — Cat
+ * Circus, Una The Mermaid, BUMBERMANIA! — where filtering by the stage is
+ * identical to searching the act's name. Those are dropped from the list; they
+ * are still reachable through search.
+ */
+function stageOptions(schedule) {
+  const stages = new Map();
+  for (const entry of schedule) {
+    if (!stages.has(entry.stage)) stages.set(entry.stage, { acts: new Set(), music: 0, arts: 0 });
+    const stage = stages.get(entry.stage);
+    stage.acts.add(entry.name);
+    if (entry.category === "Music") stage.music++;
+    else stage.arts++;
+  }
+  const music = [];
+  const arts = [];
+  for (const [name, stage] of stages) {
+    if (stage.acts.size < 2) continue;
+    (stage.music >= stage.arts ? music : arts).push(name);
+  }
+  const byName = (a, b) => a.localeCompare(b);
+  return { music: music.sort(byName), arts: arts.sort(byName) };
 }
