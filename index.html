@@ -34,6 +34,15 @@
     <input type="search" id="search" placeholder="Search artists & stages" autocomplete="off" aria-label="Search artists and stages">
     <button type="button" class="search-clear" id="search-clear" hidden aria-label="Clear search">×</button>
   </div>
+  <select id="stage-filter" class="stage-filter" aria-label="Filter by stage"></select>
+</div>
+
+<div class="toolbar chips">
+  <div class="cats" role="group" aria-label="Filter by what you picked">
+    <button type="button" class="tier-btn active" data-tier="all">All</button>
+    <button type="button" class="tier-btn" data-tier="have">Have</button>
+    <button type="button" class="tier-btn" data-tier="picked">Have + want</button>
+  </div>
   <div class="cats" role="group" aria-label="Filter by category">
     <button type="button" class="cat-btn active" data-cat="All">All</button>
     <button type="button" class="cat-btn" data-cat="Music">Music</button>
@@ -49,6 +58,7 @@
 </div>
 
 <div class="banner" id="import-banner" hidden></div>
+<div class="upnext" id="upnext" hidden></div>
 
 <main id="list" aria-label="Schedule"></main>
 

@@ -66,6 +66,47 @@ function suggestSlot(entry, busy, notBefore) {
   return null;
 }
 
+/**
+ * Minutes you'd want between two sets on different stages before the walk
+ * across the grounds stops being realistic. Deliberately one flat number: real
+ * stage-to-stage distances aren't in this data, so this flags "that's tight"
+ * without pretending to know the map. Raise it if you walk slowly.
+ */
+const TIGHT_TURNAROUND = 10;
+
+/**
+ * Picks that don't overlap but leave almost no time to cross the grounds.
+ *
+ * Reported against the later set — that's the one you're at risk of missing the
+ * start of — as id -> { minutes, from: { name, stage } }. Drop-ins are skipped
+ * because their slot can simply move.
+ */
+function findTightTurnarounds(items, gapMinutes = TIGHT_TURNAROUND) {
+  const picked = items
+    .filter((it) => it.tier && !it.slotted)
+    .slice()
+    .sort((a, b) => a.displayStart - b.displayStart);
+  const tight = new Map();
+
+  for (let i = 0; i < picked.length; i++) {
+    for (let j = i + 1; j < picked.length; j++) {
+      const earlier = picked[i];
+      const later = picked[j];
+      if (earlier.entry.stage === later.entry.stage) continue;
+      const gap = later.displayStart - earlier.displayEnd;
+      if (gap < 0 || gap >= gapMinutes) continue;
+      const existing = tight.get(later.entry.id);
+      if (!existing || gap < existing.minutes) {
+        tight.set(later.entry.id, {
+          minutes: gap,
+          from: { name: earlier.entry.name, stage: earlier.entry.stage },
+        });
+      }
+    }
+  }
+  return tight;
+}
+
 /** Ids of picked items whose display times overlap each other. */
 function computeConflicts(items) {
   const picked = items.filter((it) => it.tier);
@@ -135,9 +176,25 @@ function planDay(entries, picks, nowMin) {
   );
   parked.sort((a, b) => a.entry.startMin - b.entry.startMin || a.entry.name.localeCompare(b.entry.name));
 
-  return { timeline, parked, conflicts: computeConflicts(timeline) };
+  return {
+    timeline,
+    parked,
+    conflicts: computeConflicts(timeline),
+    tight: findTightTurnarounds(timeline),
+  };
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { PREFERRED_SLOT, MIN_SLOT, overlaps, mergeBusy, firstFreeSlot, suggestSlot, computeConflicts, planDay };
+  module.exports = {
+    PREFERRED_SLOT,
+    MIN_SLOT,
+    TIGHT_TURNAROUND,
+    overlaps,
+    mergeBusy,
+    firstFreeSlot,
+    suggestSlot,
+    computeConflicts,
+    findTightTurnarounds,
+    planDay,
+  };
 }

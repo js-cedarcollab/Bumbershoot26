@@ -96,6 +96,11 @@ let picks = profiles.active ? loadPicksFor(profiles.active) : {};
 let currentDay = "Sat";
 let query = "";
 let category = "All";
+let tierFilter = "all";
+let stageFilter = "All";
+
+/** How far ahead the "up next" nudge looks, in minutes. */
+const UPCOMING_WINDOW = 20;
 /** Set from ?now=Sat@18:30 for testing outside the festival weekend. */
 let clockOverride = null;
 /** Decoded incoming share link, held until the user says what to do with it. */
@@ -141,14 +146,18 @@ function normalize(text) {
   return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
 }
 
-function matchesFilter(entry) {
+function matchesFilter(entry, tier) {
   if (category !== "All" && entry.category !== category) return false;
+  if (stageFilter !== "All" && entry.stage !== stageFilter) return false;
+  if (tierFilter === "have" && tier !== "have") return false;
+  if (tierFilter === "picked" && !tier) return false;
   if (!query) return true;
   const needle = normalize(query);
   return normalize(entry.name).includes(needle) || normalize(entry.stage).includes(needle);
 }
 
-const filtering = () => query !== "" || category !== "All";
+const filtering = () =>
+  query !== "" || category !== "All" || stageFilter !== "All" || tierFilter !== "all";
 
 // ------------------------------------------------------------------ rendering
 
@@ -165,7 +174,7 @@ function highlight(text) {
   return `${escapeHtml(text.slice(0, start))}<mark>${escapeHtml(text.slice(start, end))}</mark>${escapeHtml(text.slice(end))}`;
 }
 
-function rowHtml(item, { conflicts, nowMin }) {
+function rowHtml(item, { conflicts, tight, nowMin }) {
   const { entry, tier, displayStart, displayEnd, slotted } = item;
   const classes = ["row"];
   if (tier) classes.push(tier);
@@ -176,6 +185,13 @@ function rowHtml(item, { conflicts, nowMin }) {
   const realWindow = `${formatMin(entry.startMin)}–${formatMin(entry.endMin)}`;
   const sub = slotted
     ? `<span class="sub">(drop in anytime, actually runs ${escapeHtml(realWindow)})</span>`
+    : "";
+
+  const walk = tight?.get(entry.id);
+  const walkNote = walk
+    ? `<span class="tight-flag">${walk.minutes === 0 ? "No gap" : `${walk.minutes} min`} after ${escapeHtml(
+        walk.from.name
+      )} — different stage</span>`
     : "";
 
   return `<button type="button" class="${classes.join(" ")}" data-id="${entry.id}"
@@ -190,6 +206,7 @@ function rowHtml(item, { conflicts, nowMin }) {
         ${entry.isFlexible && !slotted ? '<span class="cat-tag flex-tag">Drop in</span>' : ""}
         <span class="live-flag"><span class="dot"></span>ON NOW</span>
         <span class="conflict-flag"><span class="dot"></span>Overlaps another pick</span>
+        ${walkNote}
       </span>
     </span>
   </button>`;
@@ -208,9 +225,9 @@ function render({ preserveScroll = false } = {}) {
 
   // Plan against the whole day: filtering is a view, so hiding rows must never
   // change which gaps are open or which picks clash.
-  const { timeline, parked, conflicts } = planDay(entries, picks, nowMin);
-  const shownTimeline = timeline.filter((it) => matchesFilter(it.entry));
-  const shownParked = parked.filter((it) => matchesFilter(it.entry));
+  const { timeline, parked, conflicts, tight } = planDay(entries, picks, nowMin);
+  const shownTimeline = timeline.filter((it) => matchesFilter(it.entry, it.tier));
+  const shownParked = parked.filter((it) => matchesFilter(it.entry, it.tier));
 
   const anchor = nowMin == null || filtering() ? null : nowMin - ANCHOR_LOOKBACK;
   let html = "";
@@ -221,7 +238,7 @@ function render({ preserveScroll = false } = {}) {
       html += nowLineHtml();
       placedNowLine = true;
     }
-    html += rowHtml(item, { conflicts, nowMin });
+    html += rowHtml(item, { conflicts, tight, nowMin });
   }
   // Everything today has already started — the anchor sits at the end of the day.
   if (!placedNowLine) html += nowLineHtml();
@@ -234,7 +251,7 @@ function render({ preserveScroll = false } = {}) {
     for (const item of shownParked) {
       html += rowHtml(
         { ...item, displayStart: item.entry.startMin, displayEnd: item.entry.endMin, slotted: false },
-        { conflicts, nowMin: null }
+        { conflicts, tight, nowMin: null }
       );
     }
   }
@@ -249,6 +266,7 @@ function render({ preserveScroll = false } = {}) {
   if (preserveScroll) list.scrollTop = previousScroll;
 
   updateCounts(timeline, parked, conflicts, shownTimeline.length + shownParked.length, entries.length);
+  updateUpNext(timeline, nowMin);
   updateDayButtons();
   updateJumpButton();
 }
@@ -271,6 +289,71 @@ function updateDayButtons() {
     const pip = btn.querySelector(".today-pip");
     if (pip) pip.hidden = day !== today;
   });
+}
+
+/**
+ * The on-page nudge: something you picked is about to start.
+ *
+ * The case worth catching is the awkward one — a set you picked begins while
+ * another pick is still playing — so the bar says what you'd be walking out of.
+ */
+function updateUpNext(timeline, nowMin) {
+  const bar = document.getElementById("upnext");
+  if (nowMin == null) {
+    bar.hidden = true;
+    return;
+  }
+
+  const picked = timeline.filter((it) => it.tier);
+  const next = picked
+    .filter((it) => it.displayStart > nowMin && it.displayStart - nowMin <= UPCOMING_WINDOW)
+    .sort((a, b) => a.displayStart - b.displayStart)[0];
+
+  if (!next) {
+    bar.hidden = true;
+    return;
+  }
+
+  const away = next.displayStart - nowMin;
+  const clash = picked.find(
+    (it) => it !== next && it.displayStart <= nowMin && it.displayEnd > next.displayStart
+  );
+
+  bar.hidden = false;
+  bar.className = `upnext${clash ? " upnext-clash" : ""}`;
+  bar.innerHTML = `
+    <button type="button" class="upnext-body" data-goto="${next.entry.id}">
+      <span class="upnext-lead">${next.tier === "have" ? "Have to see" : "Want to see"} · in ${away} min</span>
+      <span class="upnext-name">${escapeHtml(next.entry.name)}</span>
+      <span class="upnext-where">${formatMin(next.displayStart)} · ${escapeHtml(next.entry.stage)}</span>
+      ${
+        clash
+          ? `<span class="upnext-warn">You'll be mid-set at ${escapeHtml(clash.entry.name)}, on until ${formatMin(
+              clash.displayEnd
+            )}</span>`
+          : ""
+      }
+    </button>`;
+}
+
+/** Every stage in the lineup, for the stage filter. */
+function populateStages() {
+  const stages = [...new Set(SCHEDULE.map((e) => e.stage))].sort((a, b) => a.localeCompare(b));
+  const select = document.getElementById("stage-filter");
+  select.innerHTML =
+    '<option value="All">All stages</option>' +
+    stages.map((st) => `<option value="${escapeHtml(st)}">${escapeHtml(st)}</option>`).join("");
+}
+
+/** Bring a row into view and flash it, from the up-next bar. */
+function scrollToEntry(id) {
+  const row = document.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
+  const list = document.getElementById("list");
+  if (!row) return;
+  const offset = row.getBoundingClientRect().top - list.getBoundingClientRect().top;
+  list.scrollTo({ top: list.scrollTop + offset - list.clientHeight * 0.25, behavior: "smooth" });
+  row.classList.add("flash");
+  setTimeout(() => row.classList.remove("flash"), 1200);
 }
 
 function updateWho() {
@@ -489,12 +572,41 @@ function setQuery(value) {
   else document.getElementById("list").scrollTo({ top: 0, behavior: "instant" });
 }
 
-function setCategory(value) {
-  category = value;
-  document.querySelectorAll(".cat-btn").forEach((b) => b.classList.toggle("active", b.dataset.cat === value));
+function afterFilterChange() {
   render();
   if (!filtering() && nowForDay(currentDay) != null) anchorToNow();
   else document.getElementById("list").scrollTo({ top: 0, behavior: "instant" });
+}
+
+function setCategory(value) {
+  category = value;
+  document.querySelectorAll(".cat-btn").forEach((b) => b.classList.toggle("active", b.dataset.cat === value));
+  afterFilterChange();
+}
+
+function setTier(value) {
+  tierFilter = value;
+  document.querySelectorAll(".tier-btn").forEach((b) => b.classList.toggle("active", b.dataset.tier === value));
+  afterFilterChange();
+}
+
+function setStage(value) {
+  stageFilter = value;
+  document.getElementById("stage-filter").value = value;
+  afterFilterChange();
+}
+
+function clearFilters() {
+  document.getElementById("search").value = "";
+  query = "";
+  document.getElementById("search-clear").hidden = true;
+  category = "All";
+  tierFilter = "all";
+  stageFilter = "All";
+  document.querySelectorAll(".cat-btn").forEach((b) => b.classList.toggle("active", b.dataset.cat === "All"));
+  document.querySelectorAll(".tier-btn").forEach((b) => b.classList.toggle("active", b.dataset.tier === "all"));
+  document.getElementById("stage-filter").value = "All";
+  afterFilterChange();
 }
 
 function handleSheetClick(event) {
@@ -552,9 +664,7 @@ function init() {
   const list = document.getElementById("list");
   list.addEventListener("click", (event) => {
     if (event.target.closest("#clear-filters")) {
-      document.getElementById("search").value = "";
-      setCategory("All");
-      setQuery("");
+      clearFilters();
       return;
     }
     const row = event.target.closest(".row");
@@ -567,6 +677,15 @@ function init() {
   });
   document.querySelectorAll(".cat-btn").forEach((btn) => {
     btn.addEventListener("click", () => setCategory(btn.dataset.cat));
+  });
+  document.querySelectorAll(".tier-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setTier(btn.dataset.tier));
+  });
+  const stageSelect = document.getElementById("stage-filter");
+  stageSelect.addEventListener("change", () => setStage(stageSelect.value));
+  document.getElementById("upnext").addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-goto]");
+    if (btn) scrollToEntry(btn.dataset.goto);
   });
 
   const search = document.getElementById("search");
@@ -626,6 +745,7 @@ function init() {
   // Keep "ended", "on now" and the divider honest without a page reload.
   setInterval(() => render({ preserveScroll: true }), 60000);
 
+  populateStages();
   updateWho();
   showImportBanner();
   selectDay(todayDay() || "Sat");

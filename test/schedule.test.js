@@ -128,3 +128,77 @@ test("planning a real festival day places every entry exactly once", () => {
   assert.equal(timeline.length + parked.length, sat.length);
   assert.equal(new Set([...timeline, ...parked].map((it) => it.entry.id)).size, sat.length);
 });
+
+const { findTightTurnarounds } = require("../js/schedule.js");
+
+const item = (over) => ({
+  entry: { id: over.id, name: over.id, stage: over.stage || "Stage A" },
+  tier: over.tier === undefined ? "have" : over.tier,
+  displayStart: over.start,
+  displayEnd: over.end,
+  slotted: !!over.slotted,
+});
+
+test("back-to-back picks on different stages are flagged as tight", () => {
+  const tight = findTightTurnarounds([
+    item({ id: "dacus", stage: "Fisher Stage", start: at(18, 45), end: at(19, 45) }),
+    item({ id: "molchat", stage: "Mural Stage", start: at(19, 50), end: at(20, 45) }),
+  ]);
+  assert.equal(tight.get("molchat").minutes, 5);
+  assert.equal(tight.get("molchat").from.name, "dacus");
+  assert.equal(tight.has("dacus"), false, "the flag belongs on the set you might be late for");
+});
+
+test("a comfortable gap is not flagged", () => {
+  const tight = findTightTurnarounds([
+    item({ id: "a", stage: "Fisher Stage", start: at(18), end: at(19) }),
+    item({ id: "b", stage: "Mural Stage", start: at(19, 30), end: at(20) }),
+  ]);
+  assert.equal(tight.size, 0);
+});
+
+test("back-to-back sets on the same stage need no walk", () => {
+  const tight = findTightTurnarounds([
+    item({ id: "a", stage: "Mural Stage", start: at(18), end: at(19) }),
+    item({ id: "b", stage: "Mural Stage", start: at(19), end: at(20) }),
+  ]);
+  assert.equal(tight.size, 0);
+});
+
+test("overlapping picks are conflicts, not tight turnarounds", () => {
+  const tight = findTightTurnarounds([
+    item({ id: "a", stage: "Fisher Stage", start: at(18), end: at(19) }),
+    item({ id: "b", stage: "Mural Stage", start: at(18, 30), end: at(19, 30) }),
+  ]);
+  assert.equal(tight.size, 0);
+});
+
+test("unpicked sets and movable drop-ins are ignored", () => {
+  const tight = findTightTurnarounds([
+    item({ id: "a", stage: "Fisher Stage", start: at(18), end: at(19) }),
+    item({ id: "unpicked", stage: "Mural Stage", start: at(19, 5), end: at(20), tier: null }),
+    item({ id: "dropin", stage: "Magic Dome", start: at(19, 5), end: at(19, 35), slotted: true }),
+  ]);
+  assert.equal(tight.size, 0);
+});
+
+test("the tightest of several turnarounds wins", () => {
+  const tight = findTightTurnarounds([
+    item({ id: "a", stage: "Fisher Stage", start: at(18), end: at(19) }),
+    item({ id: "b", stage: "Mural Stage", start: at(18, 30), end: at(19, 2) }),
+    item({ id: "c", stage: "Upper NW Courtyard", start: at(19, 5), end: at(20) }),
+  ]);
+  assert.equal(tight.get("c").minutes, 3);
+  assert.equal(tight.get("c").from.name, "b");
+});
+
+test("planDay reports tight turnarounds alongside conflicts", () => {
+  const entries = [
+    entry({ id: "dacus", name: "Lucy Dacus", startMin: at(18, 45), endMin: at(19, 45) }),
+    entry({ id: "molchat", name: "Molchat Doma", startMin: at(19, 50), endMin: at(20, 45) }),
+  ];
+  entries[0].stage = "Fisher Stage";
+  entries[1].stage = "Mural Stage";
+  const { tight } = planDay(entries, { dacus: "have", molchat: "want" }, null);
+  assert.equal(tight.get("molchat").minutes, 5);
+});
