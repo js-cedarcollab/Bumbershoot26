@@ -7,10 +7,13 @@ list parked on whatever is happening right now, and finds gaps for the drop-in-a
 It's a plain static site — HTML, CSS and three JavaScript files. No build step, no framework,
 no backend, no accounts, no analytics.
 
-**Your picks never leave your device.** They live in your browser's `localStorage` under the key
-`bumbershoot2026-picks`, and nothing is ever sent anywhere. Clearing your browser data (or tapping
-*Clear picks*) is the only way they disappear — and picks made on your phone won't show up on your
-laptop, because there's nothing syncing them.
+**Your picks never leave your device.** Up to five people can share one device, each with their own
+picks in `localStorage` under `bumbershoot2026-picks:<name>`. Nothing is ever sent anywhere on its
+own — the only way a plan moves between devices is a share link you create deliberately.
+
+One caveat worth knowing if you plan weeks ahead: Safari clears site storage after about seven days
+of not visiting a site. Adding the app to your home screen mostly exempts it, and a share link
+doubles as a real backup.
 
 ## Run it
 
@@ -57,9 +60,34 @@ its real window — shown as a normal 30-minute row reading *(drop in anytime, a
 full to place it honestly, it moves back to the flexible section rather than being wedged into a bad
 slot. Suggested slots also skip gaps that have already passed.
 
-**Conflicts.** Any two picks whose times overlap get a yellow `Overlaps another pick` flag, and the
-header keeps a running `have · want · clashing` count. Flexible items are compared using their
-suggested slot, not their full multi-hour window.
+**Conflicts and travel time.** Two picks that overlap get a yellow `Overlaps another pick` flag.
+Two picks on *different stages* with under 10 minutes between them get a quieter amber note on the
+later set — the walk across the grounds is a conflict too, just not the kind most schedule apps
+count. That's one flat number rather than invented stage-to-stage distances, since the lineup data
+has no map in it; change `TIGHT_TURNAROUND` in `js/schedule.js` if you walk slower. Flexible items
+are compared using their suggested slot, not their full multi-hour window, and are exempt from the
+walking check because their slot can simply move.
+
+**Up next.** When a pick starts within 20 minutes, a bar pins above the list with what's coming and
+where. If it starts while another pick is still playing, the bar turns yellow and tells you what
+you'd be walking out of, and until when — the case that actually costs you a set. Tapping it jumps
+to the row.
+
+**People.** A name picker holds up to five people on one device, each with separate picks. Tap your
+name to switch, add someone, share, or clear.
+
+**Share links.** *Share my picks* builds a link with your whole pick list packed into the URL
+fragment — two bits per entry, so the entire weekend fits in 55 characters and survives a text
+message. Plan on a desktop, text it to yourself, open it on your phone. Opening someone's link
+never overwrites anything: a banner offers *open as them* or *merge into mine*, and nothing is
+written until you choose. Links carry a fingerprint of the lineup they were built from, so a link
+made against different data is reported as stale instead of silently decoded into the wrong sets.
+
+**Search and filters.** Search over artist and stage names (accent-insensitive; `/` focuses it,
+Escape clears). Filter by what you picked (*Have*, *Have + want*), by category (Music/Arts) and by
+stage — which is also how you get "just comedy", since comedy is a stage here rather than a
+category. Filters compose, and they're view-only: hiding rows never changes which gaps are open or
+which picks clash.
 
 ## Editing the lineup
 
@@ -80,8 +108,9 @@ time, so editing a set's name or time drops any pick previously saved against it
 npm test
 ```
 
-Runs the Node test suite over the gap-finding, reflow and conflict logic in `js/schedule.js`, plus
-a sanity check of the lineup data. No dependencies.
+Runs the Node test suite over the gap-finding, reflow, conflict and travel-time logic in
+`js/schedule.js`, the share-link encoding in `js/share.js`, and a sanity check of the lineup data.
+No dependencies.
 
 To see the "now" behaviour outside the festival weekend, append a clock override:
 [`?now=Sat@18:05`](http://localhost:8000/?now=Sat@18:05) pretends it's 6:05 PM on the Saturday.
@@ -92,15 +121,22 @@ To see the "now" behaviour outside the festival weekend, append a clock override
 index.html          markup and page shell
 css/app.css         all styling
 js/data.js          lineup data, flexible flags, normalizer
-js/schedule.js      gap-finding, slot suggestion, conflict detection (pure, tested)
-js/app.js           storage, rendering, "now" anchoring, interaction
+js/schedule.js      gap-finding, slot suggestion, conflicts, travel time (pure, tested)
+js/share.js         share-link encoding and lineup fingerprint (pure, tested)
+js/app.js           people, storage, rendering, "now" anchoring, filters, interaction
 sw.js               offline cache
 test/               node --test suite
 ```
 
 ## Not included, on purpose
 
-No Spotify integration, no accounts, no sync, no backend. One device, one weekend.
+No Spotify integration, no accounts, no server-side sync, no backend, no analytics.
+
+The lineup in `js/data.js` is a **static snapshot**, not a live feed. A static site can't fetch
+bumbershoot.com directly (the browser blocks cross-origin reads, and there's no server here to do
+it), so day-of set changes don't appear on their own — updating the file and pushing is the way
+they land. Because pick ids are built from day, name and start time, a set that moves time loses
+any pick saved against it.
 
 ## License
 
