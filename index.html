@@ -18,13 +18,28 @@
 <header>
   <div class="title-row">
     <h1>My Bumbershoot</h1>
-    <div class="doors">DOORS 12:30 PM</div>
+    <button type="button" class="who" id="who" aria-haspopup="dialog">
+      <span class="who-name" id="who-name">Me</span><span class="who-caret">▾</span>
+    </button>
   </div>
   <div class="days" role="tablist" aria-label="Festival day">
     <button class="day-btn active" role="tab" aria-selected="true" data-day="Sat">Saturday, Sep 5<span class="today-pip" hidden></span></button>
     <button class="day-btn" role="tab" aria-selected="false" data-day="Sun">Sunday, Sep 6<span class="today-pip" hidden></span></button>
   </div>
 </header>
+
+<div class="toolbar">
+  <div class="search-wrap">
+    <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 10.5 L14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    <input type="search" id="search" placeholder="Search artists & stages" autocomplete="off" aria-label="Search artists and stages">
+    <button type="button" class="search-clear" id="search-clear" hidden aria-label="Clear search">×</button>
+  </div>
+  <div class="cats" role="group" aria-label="Filter by category">
+    <button type="button" class="cat-btn active" data-cat="All">All</button>
+    <button type="button" class="cat-btn" data-cat="Music">Music</button>
+    <button type="button" class="cat-btn" data-cat="Arts">Arts</button>
+  </div>
+</div>
 
 <div class="legend">
   <span><span class="dot have"></span>Have to see</span>
@@ -33,17 +48,22 @@
   <span class="counts" id="counts"></span>
 </div>
 
+<div class="banner" id="import-banner" hidden></div>
+
 <main id="list" aria-label="Schedule"></main>
 
 <button type="button" class="jump-now" id="jump-now"><span class="dot"></span>Jump to now</button>
 
 <footer>
-  Tap a row to cycle: none → have → want → none
-  <button type="button" class="reset" id="reset">Clear picks</button>
+  Doors 12:30 PM · tap a row to cycle: none → have → want → none
 </footer>
+
+<div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden></div>
 
 <script src="js/data.js"></script>
 <script src="js/schedule.js"></script>
+<script src="js/share.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

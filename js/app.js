@@ -1,11 +1,15 @@
 /**
  * Bumbershoot 2026 — My Schedule.
  *
- * State lives entirely on the device: a { [entryId]: 'have' | 'want' } map in
- * localStorage. No accounts, no backend, nothing leaves the phone.
+ * Everything lives on the device: up to five named people, each with their own
+ * { [entryId]: 'have' | 'want' } map in localStorage. The only way data moves
+ * between devices is a share link the user creates deliberately — nothing is
+ * ever sent anywhere on its own.
  */
 
-const STORAGE_KEY = "bumbershoot2026-picks";
+const PROFILES_KEY = "bumbershoot2026-profiles";
+const PICKS_PREFIX = "bumbershoot2026-picks";
+const MAX_PEOPLE = 5;
 
 /** Festival dates, used only to decide which day (if either) is "today". */
 const DAY_DATES = { Sat: "2026-09-05", Sun: "2026-09-06" };
@@ -17,41 +21,87 @@ const TIER_CYCLE = { null: "have", have: "want", want: null };
 
 // ---------------------------------------------------------------- persistence
 
-function loadPicks() {
+function readJson(key, fallback) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-    // Drop anything that isn't a known id or a valid tier — stale or hand-edited.
-    const valid = new Set(SCHEDULE.map((e) => e.id));
-    const picks = {};
-    for (const [id, tier] of Object.entries(parsed)) {
-      if (valid.has(id) && (tier === "have" || tier === "want")) picks[id] = tier;
-    }
-    return picks;
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
   } catch (err) {
-    console.warn("Could not read saved picks:", err);
-    return {};
+    console.warn(`Could not read ${key}:`, err);
+    return fallback;
   }
 }
 
-function savePicks(picks) {
+function writeJson(key, value) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(picks));
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch (err) {
-    // Private browsing, full quota, storage blocked — the app still works for
+    // Private browsing, blocked storage, full quota — the app still works for
     // this session, it just won't remember.
-    console.warn("Could not save picks:", err);
+    console.warn(`Could not save ${key}:`, err);
+    return false;
   }
+}
+
+function personKey(name) {
+  return `${PICKS_PREFIX}:${slugify(name)}`;
+}
+
+/** Keep only ids and tiers we recognise — guards stale or hand-edited storage. */
+function sanitizePicks(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const valid = new Set(SCHEDULE.map((e) => e.id));
+  const picks = {};
+  for (const [id, tier] of Object.entries(raw)) {
+    if (valid.has(id) && (tier === "have" || tier === "want")) picks[id] = tier;
+  }
+  return picks;
+}
+
+function loadPicksFor(name) {
+  return sanitizePicks(readJson(personKey(name), {}));
+}
+
+function savePicksFor(name, value) {
+  writeJson(personKey(name), value);
+}
+
+/** { names: [], active: string|null }, with the pre-profiles save migrated in. */
+function loadProfiles() {
+  const stored = readJson(PROFILES_KEY, null);
+  if (stored && Array.isArray(stored.names)) {
+    const names = stored.names.filter((n) => typeof n === "string" && n.trim()).slice(0, MAX_PEOPLE);
+    const active = names.includes(stored.active) ? stored.active : names[0] || null;
+    return { names, active };
+  }
+  // Migration: picks saved before this app knew about people become "Me".
+  const legacy = sanitizePicks(readJson(PICKS_PREFIX, null));
+  if (Object.keys(legacy).length) {
+    savePicksFor("Me", legacy);
+    const profiles = { names: ["Me"], active: "Me" };
+    writeJson(PROFILES_KEY, profiles);
+    return profiles;
+  }
+  return { names: [], active: null };
+}
+
+function saveProfiles() {
+  writeJson(PROFILES_KEY, profiles);
 }
 
 // ---------------------------------------------------------------------- state
 
-let picks = loadPicks();
+let profiles = loadProfiles();
+let picks = profiles.active ? loadPicksFor(profiles.active) : {};
 let currentDay = "Sat";
+let query = "";
+let category = "All";
 /** Set from ?now=Sat@18:30 for testing outside the festival weekend. */
 let clockOverride = null;
+/** Decoded incoming share link, held until the user says what to do with it. */
+let pendingImport = null;
+
+// ------------------------------------------------------------------ the clock
 
 /** Local date as YYYY-MM-DD, so "today" means the user's day, not UTC's. */
 function localDateKey(date) {
@@ -65,7 +115,6 @@ function todayDay() {
   return Object.keys(DAY_DATES).find((d) => DAY_DATES[d] === key) || null;
 }
 
-/** Current time in minutes since midnight. */
 function nowMinutes() {
   if (clockOverride) return clockOverride.min;
   const d = new Date();
@@ -86,10 +135,34 @@ function readClockOverride() {
   return { day, min: Number(m[2]) * 60 + Number(m[3]) };
 }
 
+// ------------------------------------------------------------------ filtering
+
+function normalize(text) {
+  return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function matchesFilter(entry) {
+  if (category !== "All" && entry.category !== category) return false;
+  if (!query) return true;
+  const needle = normalize(query);
+  return normalize(entry.name).includes(needle) || normalize(entry.stage).includes(needle);
+}
+
+const filtering = () => query !== "" || category !== "All";
+
 // ------------------------------------------------------------------ rendering
 
 function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+/** Wrap the matched part of a search hit so it reads as a hit. */
+function highlight(text) {
+  if (!query) return escapeHtml(text);
+  const start = normalize(text).indexOf(normalize(query));
+  if (start < 0) return escapeHtml(text);
+  const end = start + query.length;
+  return `${escapeHtml(text.slice(0, start))}<mark>${escapeHtml(text.slice(start, end))}</mark>${escapeHtml(text.slice(end))}`;
 }
 
 function rowHtml(item, { conflicts, nowMin }) {
@@ -109,8 +182,8 @@ function rowHtml(item, { conflicts, nowMin }) {
       aria-pressed="${tier ? "true" : "false"}">
     <span class="time">${formatMin(displayStart)}<br>${formatMin(displayEnd)}</span>
     <span class="info">
-      <span class="name-line"><span class="name">${escapeHtml(entry.name)}</span></span>
-      <span class="stage">(${escapeHtml(entry.stage)})</span>
+      <span class="name-line"><span class="name">${highlight(entry.name)}</span></span>
+      <span class="stage">(${highlight(entry.stage)})</span>
       ${sub}
       <span class="meta-row">
         <span class="cat-tag">${escapeHtml(entry.category)}</span>
@@ -122,19 +195,28 @@ function rowHtml(item, { conflicts, nowMin }) {
   </button>`;
 }
 
+function nowLineHtml() {
+  return `<div class="now-line" id="now-line"><span class="now-label">Now</span></div>`;
+}
+
 function render({ preserveScroll = false } = {}) {
   const list = document.getElementById("list");
   const previousScroll = list.scrollTop;
 
   const nowMin = nowForDay(currentDay);
   const entries = SCHEDULE.filter((e) => e.day === currentDay);
-  const { timeline, parked, conflicts } = planDay(entries, picks, nowMin);
 
-  const anchor = nowMin == null ? null : nowMin - ANCHOR_LOOKBACK;
+  // Plan against the whole day: filtering is a view, so hiding rows must never
+  // change which gaps are open or which picks clash.
+  const { timeline, parked, conflicts } = planDay(entries, picks, nowMin);
+  const shownTimeline = timeline.filter((it) => matchesFilter(it.entry));
+  const shownParked = parked.filter((it) => matchesFilter(it.entry));
+
+  const anchor = nowMin == null || filtering() ? null : nowMin - ANCHOR_LOOKBACK;
   let html = "";
   let placedNowLine = anchor == null;
 
-  for (const item of timeline) {
+  for (const item of shownTimeline) {
     if (!placedNowLine && item.displayStart >= anchor) {
       html += nowLineHtml();
       placedNowLine = true;
@@ -144,12 +226,12 @@ function render({ preserveScroll = false } = {}) {
   // Everything today has already started — the anchor sits at the end of the day.
   if (!placedNowLine) html += nowLineHtml();
 
-  if (parked.length) {
+  if (shownParked.length) {
     html += `<div class="section-head">
       <div class="section-title">Flexible — fit in when you can</div>
       <div class="section-note">Drop-in anytime. Picked ones move into the timeline when a gap opens up.</div>
     </div>`;
-    for (const item of parked) {
+    for (const item of shownParked) {
       html += rowHtml(
         { ...item, displayStart: item.entry.startMin, displayEnd: item.entry.endMin, slotted: false },
         { conflicts, nowMin: null }
@@ -157,25 +239,27 @@ function render({ preserveScroll = false } = {}) {
     }
   }
 
-  list.innerHTML = html || '<div class="empty">Nothing scheduled.</div>';
+  if (!shownTimeline.length && !shownParked.length) {
+    html = `<div class="empty">Nothing here matching that.${
+      filtering() ? ' <button type="button" class="link-btn" id="clear-filters">Clear filters</button>' : ""
+    }</div>`;
+  }
+
+  list.innerHTML = html;
   if (preserveScroll) list.scrollTop = previousScroll;
 
-  updateCounts(timeline, parked, conflicts);
+  updateCounts(timeline, parked, conflicts, shownTimeline.length + shownParked.length, entries.length);
   updateDayButtons();
   updateJumpButton();
 }
 
-function nowLineHtml() {
-  return `<div class="now-line" id="now-line"><span class="now-label">Now</span></div>`;
-}
-
-function updateCounts(timeline, parked, conflicts) {
+function updateCounts(timeline, parked, conflicts, shown, total) {
   const all = timeline.concat(parked);
   const have = all.filter((it) => it.tier === "have").length;
   const want = all.filter((it) => it.tier === "want").length;
-  const el = document.getElementById("counts");
   const clash = conflicts.size ? ` · ${conflicts.size} clashing` : "";
-  el.textContent = have || want ? `${have} have · ${want} want${clash}` : "";
+  const picked = have || want ? `${have} have · ${want} want${clash}` : "";
+  document.getElementById("counts").textContent = filtering() ? `${shown} of ${total} shown` : picked;
 }
 
 function updateDayButtons() {
@@ -187,6 +271,10 @@ function updateDayButtons() {
     const pip = btn.querySelector(".today-pip");
     if (pip) pip.hidden = day !== today;
   });
+}
+
+function updateWho() {
+  document.getElementById("who-name").textContent = profiles.active || "Choose name";
 }
 
 // --------------------------------------------------------------- "now" anchor
@@ -216,18 +304,172 @@ function updateJumpButton() {
   const offset = line.getBoundingClientRect().top - list.getBoundingClientRect().top;
   const visible = offset > -40 && offset < list.clientHeight - 40;
   btn.classList.toggle("show", !visible);
-  btn.textContent = "";
-  btn.insertAdjacentHTML("beforeend", '<span class="dot"></span>Jump to now');
+}
+
+// ------------------------------------------------------------------ the sheet
+
+function openSheet(title, bodyHtml) {
+  const sheet = document.getElementById("sheet");
+  sheet.innerHTML = `<div class="sheet-title" id="sheet-title">${escapeHtml(title)}</div>${bodyHtml}`;
+  sheet.hidden = false;
+  document.getElementById("sheet-backdrop").hidden = false;
+  const focusable = sheet.querySelector("input, button");
+  if (focusable) focusable.focus();
+}
+
+function closeSheet() {
+  document.getElementById("sheet").hidden = true;
+  document.getElementById("sheet-backdrop").hidden = true;
+}
+
+/** First run, and any time nobody is selected. */
+function openChooser() {
+  const list = profiles.names
+    .map((n) => `<button type="button" class="sheet-row" data-pick="${escapeHtml(n)}">${escapeHtml(n)}</button>`)
+    .join("");
+  const full = profiles.names.length >= MAX_PEOPLE;
+  openSheet(
+    profiles.names.length ? "Who's planning?" : "Welcome — who are you?",
+    `${list}
+     ${
+       full
+         ? `<div class="sheet-note">That's ${MAX_PEOPLE} people, the most this holds. Remove someone to add another.</div>`
+         : `<form class="sheet-form" id="new-person">
+              <input type="text" id="new-name" placeholder="Your name" maxlength="20" autocomplete="off" aria-label="Your name">
+              <button type="submit" class="sheet-go">Start</button>
+            </form>`
+     }
+     <div class="sheet-note">Saved on this device only. Use <strong>Share my picks</strong> to move a plan to your phone.</div>`
+  );
+}
+
+function openMenu() {
+  const others = profiles.names.filter((n) => n !== profiles.active);
+  openSheet(
+    profiles.active || "Choose name",
+    `${others.map((n) => `<button type="button" class="sheet-row" data-pick="${escapeHtml(n)}">Switch to ${escapeHtml(n)}</button>`).join("")}
+     ${profiles.names.length < MAX_PEOPLE ? '<button type="button" class="sheet-row" data-action="add">Add someone new</button>' : ""}
+     <button type="button" class="sheet-row" data-action="share">Share my picks…</button>
+     <button type="button" class="sheet-row danger" data-action="clear">Clear my picks</button>
+     ${profiles.names.length > 1 ? '<button type="button" class="sheet-row danger" data-action="remove">Remove me from this device</button>' : ""}`
+  );
+}
+
+function openShare() {
+  const url = new URL(location.href);
+  url.hash = `p=${encodePicks(SCHEDULE, picks)}&n=${encodeURIComponent(profiles.active || "A friend")}`;
+  url.search = "";
+  const link = url.toString();
+  const count = Object.keys(picks).length;
+  openSheet(
+    "Share my picks",
+    `<div class="sheet-note">${
+      count
+        ? `A link carrying all ${count} of your picks. Text or email it to yourself to pick up on another device, or send it to a friend.`
+        : "You haven't picked anything yet — this link will be empty."
+    }</div>
+     <textarea class="share-box" id="share-box" readonly rows="3">${escapeHtml(link)}</textarea>
+     <button type="button" class="sheet-go wide" data-action="copy">Copy link</button>`
+  );
+}
+
+// ---------------------------------------------------------------- share links
+
+function readIncomingShare() {
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const payload = hash.get("p");
+  if (!payload) return null;
+  try {
+    const { picks: incoming, stale } = decodePicks(SCHEDULE, payload);
+    return { picks: incoming, stale, name: (hash.get("n") || "A friend").slice(0, 20) };
+  } catch (err) {
+    console.warn("Ignoring unreadable share link:", err);
+    return null;
+  }
+}
+
+/**
+ * Show what arrived and let the user decide. Nothing is written to storage
+ * until they choose — opening a friend's link must never eat your own picks.
+ */
+function showImportBanner() {
+  const banner = document.getElementById("import-banner");
+  if (!pendingImport) {
+    banner.hidden = true;
+    return;
+  }
+  const count = Object.keys(pendingImport.picks).length;
+  const full = profiles.names.length >= MAX_PEOPLE && !profiles.names.includes(pendingImport.name);
+  banner.hidden = false;
+  banner.innerHTML = `
+    <div class="banner-text">
+      <strong>${escapeHtml(pendingImport.name)}</strong> shared ${count} pick${count === 1 ? "" : "s"} with you.
+      ${pendingImport.stale ? '<span class="banner-warn">This link was made from a different version of the lineup, so some sets may not line up.</span>' : ""}
+      ${full ? `<span class="banner-warn">This device already holds ${MAX_PEOPLE} people — merge, or remove someone first.</span>` : ""}
+    </div>
+    <div class="banner-actions">
+      ${full ? "" : `<button type="button" data-import="as">Open as ${escapeHtml(pendingImport.name)}</button>`}
+      ${profiles.active ? '<button type="button" data-import="merge">Merge into mine</button>' : ""}
+      <button type="button" class="ghost" data-import="dismiss">Dismiss</button>
+    </div>`;
+}
+
+function applyImport(mode) {
+  if (!pendingImport) return;
+  if (mode === "as") {
+    const name = pendingImport.name;
+    if (profiles.names.includes(name) && !confirm(`Replace ${name}'s saved picks on this device?`)) return;
+    if (!profiles.names.includes(name)) profiles.names.push(name);
+    profiles.active = name;
+    saveProfiles();
+    picks = pendingImport.picks;
+    savePicksFor(name, picks);
+  } else if (mode === "merge") {
+    picks = { ...picks, ...pendingImport.picks };
+    savePicksFor(profiles.active, picks);
+  }
+  pendingImport = null;
+  history.replaceState(null, "", location.pathname + location.search);
+  showImportBanner();
+  updateWho();
+  render();
+}
+
+// ------------------------------------------------------------------- people
+
+function selectPerson(name) {
+  profiles.active = name;
+  saveProfiles();
+  picks = loadPicksFor(name);
+  updateWho();
+  closeSheet();
+  render();
+}
+
+function addPerson(name) {
+  const clean = name.trim().slice(0, 20);
+  if (!clean) return;
+  if (profiles.names.some((n) => n.toLowerCase() === clean.toLowerCase())) {
+    selectPerson(profiles.names.find((n) => n.toLowerCase() === clean.toLowerCase()));
+    return;
+  }
+  if (profiles.names.length >= MAX_PEOPLE) return;
+  profiles.names.push(clean);
+  selectPerson(clean);
 }
 
 // ---------------------------------------------------------------- interaction
 
 function cycleTier(id) {
+  if (!profiles.active) {
+    openChooser();
+    return;
+  }
   const current = picks[id] || null;
   const next = TIER_CYCLE[current];
   if (next) picks[id] = next;
   else delete picks[id];
-  savePicks(picks);
+  savePicksFor(profiles.active, picks);
   // Picks change which gaps are open, so flexible items reflow on every tap.
   render({ preserveScroll: true });
 }
@@ -235,15 +477,86 @@ function cycleTier(id) {
 function selectDay(day, { anchor = true } = {}) {
   currentDay = day;
   render();
-  if (anchor && nowForDay(day) != null) anchorToNow();
+  if (anchor && nowForDay(day) != null && !filtering()) anchorToNow();
   else document.getElementById("list").scrollTo({ top: 0, behavior: "instant" });
+}
+
+function setQuery(value) {
+  query = value;
+  document.getElementById("search-clear").hidden = !value;
+  render();
+  if (!filtering() && nowForDay(currentDay) != null) anchorToNow();
+  else document.getElementById("list").scrollTo({ top: 0, behavior: "instant" });
+}
+
+function setCategory(value) {
+  category = value;
+  document.querySelectorAll(".cat-btn").forEach((b) => b.classList.toggle("active", b.dataset.cat === value));
+  render();
+  if (!filtering() && nowForDay(currentDay) != null) anchorToNow();
+  else document.getElementById("list").scrollTo({ top: 0, behavior: "instant" });
+}
+
+function handleSheetClick(event) {
+  const row = event.target.closest("[data-pick], [data-action]");
+  if (!row) return;
+  if (row.dataset.pick) return selectPerson(row.dataset.pick);
+
+  switch (row.dataset.action) {
+    case "add":
+      closeSheet();
+      profiles.active = null;
+      openChooser();
+      break;
+    case "share":
+      openShare();
+      break;
+    case "copy": {
+      const box = document.getElementById("share-box");
+      box.select();
+      navigator.clipboard?.writeText(box.value).catch(() => {});
+      row.textContent = "Copied";
+      setTimeout(() => (row.textContent = "Copy link"), 1500);
+      break;
+    }
+    case "clear":
+      if (!confirm(`Clear all of ${profiles.active}'s picks for both days?`)) return;
+      picks = {};
+      savePicksFor(profiles.active, picks);
+      closeSheet();
+      render();
+      break;
+    case "remove":
+      if (!confirm(`Remove ${profiles.active} and their picks from this device?`)) return;
+      try {
+        localStorage.removeItem(personKey(profiles.active));
+      } catch (err) {
+        console.warn("Could not remove saved picks:", err);
+      }
+      profiles.names = profiles.names.filter((n) => n !== profiles.active);
+      profiles.active = profiles.names[0] || null;
+      saveProfiles();
+      picks = profiles.active ? loadPicksFor(profiles.active) : {};
+      updateWho();
+      closeSheet();
+      if (!profiles.active) openChooser();
+      render();
+      break;
+  }
 }
 
 function init() {
   clockOverride = readClockOverride();
+  pendingImport = readIncomingShare();
 
   const list = document.getElementById("list");
   list.addEventListener("click", (event) => {
+    if (event.target.closest("#clear-filters")) {
+      document.getElementById("search").value = "";
+      setCategory("All");
+      setQuery("");
+      return;
+    }
     const row = event.target.closest(".row");
     if (row) cycleTier(row.dataset.id);
   });
@@ -252,28 +565,71 @@ function init() {
   document.querySelectorAll(".day-btn").forEach((btn) => {
     btn.addEventListener("click", () => selectDay(btn.dataset.day));
   });
+  document.querySelectorAll(".cat-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setCategory(btn.dataset.cat));
+  });
+
+  const search = document.getElementById("search");
+  search.addEventListener("input", () => setQuery(search.value.trim()));
+  document.getElementById("search-clear").addEventListener("click", () => {
+    search.value = "";
+    setQuery("");
+    search.focus();
+  });
 
   document.getElementById("jump-now").addEventListener("click", () => anchorToNow("smooth"));
+  document.getElementById("who").addEventListener("click", () => (profiles.active ? openMenu() : openChooser()));
+  document.getElementById("sheet").addEventListener("click", handleSheetClick);
+  document.getElementById("sheet").addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (event.target.id === "new-person") addPerson(document.getElementById("new-name").value);
+  });
+  document.getElementById("sheet-backdrop").addEventListener("click", () => {
+    if (profiles.active) closeSheet();
+  });
+  document.getElementById("import-banner").addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-import]");
+    if (btn) applyImport(btn.dataset.import);
+  });
 
-  document.getElementById("reset").addEventListener("click", () => {
-    if (!Object.keys(picks).length) return;
-    if (!confirm("Clear all your picks for both days?")) return;
-    picks = {};
-    savePicks(picks);
-    render();
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      if (!document.getElementById("sheet").hidden && profiles.active) return closeSheet();
+      if (query) {
+        search.value = "";
+        setQuery("");
+      }
+      return;
+    }
+    // "/" jumps to search, the way every list-shaped desktop app does it.
+    if (event.key === "/" && document.activeElement !== search) {
+      event.preventDefault();
+      search.focus();
+      search.select();
+    }
+  });
+
+  // A share link opened while the app is already up only changes the hash, so
+  // the page never reloads — pick it up here too.
+  window.addEventListener("hashchange", () => {
+    pendingImport = readIncomingShare();
+    showImportBanner();
   });
 
   // Coming back to the tab mid-festival should land you back on "now".
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
     render();
-    if (nowForDay(currentDay) != null) anchorToNow();
+    if (nowForDay(currentDay) != null && !filtering()) anchorToNow();
   });
 
   // Keep "ended", "on now" and the divider honest without a page reload.
   setInterval(() => render({ preserveScroll: true }), 60000);
 
+  updateWho();
+  showImportBanner();
   selectDay(todayDay() || "Sat");
+  if (!profiles.active && !pendingImport) openChooser();
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
