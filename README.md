@@ -95,6 +95,11 @@ which of those slots is still open. The **Free** filter takes it further and sho
 clash with nothing you've picked, so a filled-up day gets shorter as you plan. Drop-ins are left
 out of the calculation on both sides, since their slot moves anyway.
 
+**Copy my agenda.** For friends who want your plan but not your app: *Copy my agenda as text* in
+the name menu builds a plain-text list of both days' picks, in order, with wants, clashes and
+drop-ins called out the way the screen calls them out. Paste it into a message and it reads as an
+agenda rather than a link.
+
 **Search and filters.** The legend is the filter: *Have to see* and *Want to see* are independent
 toggles, and *Conflicts* and *Free time* are whole views that replace a tier selection rather than
 stacking with it. Search covers artist and stage names (accent-insensitive; `/` focuses it, Escape
@@ -164,8 +169,9 @@ npm test
 ```
 
 Runs the Node test suite over the gap-finding, reflow, conflict and travel-time logic in
-`js/schedule.js`, the share-link encoding in `js/share.js`, and a sanity check of the lineup data.
-No dependencies.
+`js/schedule.js`, the share links and text agenda in `js/share.js`, the rec matching in
+`js/recs.js`, a sanity check of the lineup data, and a wiring check that every interactive control
+in `index.html` actually reaches an `addEventListener` in `js/app.js`. No dependencies.
 
 To see the "now" behaviour outside the festival weekend, append a clock override:
 [`?now=Sat@18:05`](http://localhost:8000/?now=Sat@18:05) pretends it's 6:05 PM on the Saturday.
@@ -177,7 +183,7 @@ index.html          markup and page shell
 css/app.css         all styling
 js/data.js          lineup data, flexible flags, normalizer
 js/schedule.js      gap-finding, slot suggestion, conflicts, travel time (pure, tested)
-js/share.js         share-link encoding and lineup fingerprint (pure, tested)
+js/share.js         share-link encoding, fingerprint, text agenda (pure, tested)
 js/recs.js          optional Stranger picks overlay and name matching (pure, tested)
 js/app.js           people, storage, rendering, "now" anchoring, filters, interaction
 sw.js               offline cache

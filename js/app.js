@@ -543,6 +543,7 @@ function openMenu() {
     `${others.map((n) => `<button type="button" class="sheet-row" data-pick="${escapeHtml(n)}">Switch to ${escapeHtml(n)}</button>`).join("")}
      ${profiles.names.length < MAX_PEOPLE ? '<button type="button" class="sheet-row" data-action="add">Add someone new</button>' : ""}
      <button type="button" class="sheet-row" data-action="share">Share my picks…</button>
+     <button type="button" class="sheet-row" data-action="agenda">Copy my agenda as text…</button>
      <button type="button" class="sheet-row danger" data-action="clear">Clear my picks</button>
      ${profiles.names.length > 1 ? '<button type="button" class="sheet-row danger" data-action="remove">Remove me from this device</button>' : ""}`
   );
@@ -563,6 +564,36 @@ function openShare() {
     }</div>
      <textarea class="share-box" id="share-box" readonly rows="3">${escapeHtml(link)}</textarea>
      <button type="button" class="sheet-go wide" data-action="copy">Copy link</button>`
+  );
+}
+
+/** Both days as plain text, for pasting into a message. */
+function buildAgenda() {
+  const labels = { Sat: "SATURDAY, SEP 5", Sun: "SUNDAY, SEP 6" };
+  const who = profiles.active ? `${profiles.active}'s Bumbershoot 2026` : "Bumbershoot 2026";
+  const parts = [who];
+  for (const day of ["Sat", "Sun"]) {
+    const entries = SCHEDULE.filter((e) => e.day === day);
+    const plan = planDay(entries, picks, null);
+    const anyPicks = plan.timeline.concat(plan.parked).some((it) => it.tier);
+    if (!anyPicks) continue;
+    parts.push("");
+    parts.push(agendaForDay(labels[day], plan, formatMin));
+  }
+  if (parts.length === 1) parts.push("", "Nothing picked yet.");
+  return parts.join("\n");
+}
+
+function openAgenda() {
+  const text = buildAgenda();
+  const lines = text.split("\n").filter((l) => l.startsWith("  ") && !l.includes("—  ")).length;
+  openSheet(
+    "Copy my agenda",
+    `<div class="sheet-note">Plain text, for people who'd rather have a list than a link.${
+      lines ? "" : " You haven't picked anything yet."
+    }</div>
+     <textarea class="share-box agenda-box" id="share-box" readonly rows="12">${escapeHtml(text)}</textarea>
+     <button type="button" class="sheet-go wide" data-action="copy">Copy agenda</button>`
   );
 }
 
@@ -768,12 +799,17 @@ function handleSheetClick(event) {
     case "share":
       openShare();
       break;
+    case "agenda":
+      openAgenda();
+      break;
     case "copy": {
       const box = document.getElementById("share-box");
       box.select();
       navigator.clipboard?.writeText(box.value).catch(() => {});
+      const label = row.dataset.label || row.textContent;
+      row.dataset.label = label;
       row.textContent = "Copied";
-      setTimeout(() => (row.textContent = "Copy link"), 1500);
+      setTimeout(() => (row.textContent = label), 1500);
       break;
     }
     case "clear":

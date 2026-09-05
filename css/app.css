@@ -459,3 +459,7 @@ mark{background:rgba(255,210,63,.22); color:inherit; border-radius:2px;}
   .row{padding-left:18px; padding-right:18px;}
   .credit{padding-bottom:28px;}
 }
+.agenda-box{
+  font-size:11.5px; line-height:1.55; white-space:pre; overflow-x:auto;
+  color:var(--text);
+}
