@@ -342,3 +342,15 @@ mark{background:rgba(255,210,63,.22); color:inherit; border-radius:2px;}
 
 @keyframes flash-row{0%,100%{background:transparent;} 30%{background:var(--row-hover);}}
 .row.flash{animation:flash-row 1.1s ease;}
+
+/* ------------------------------------------------- "you're busy then" mark */
+.busy-flag{
+  display:inline-flex; align-items:center; gap:4px;
+  font-size:10.5px; font-weight:600;
+}
+.busy-flag .dot{width:6px; height:6px; border-radius:50%;}
+.busy-have{color:var(--have);}
+.busy-have .dot{background:var(--have);}
+.busy-want{color:var(--want);}
+.busy-want .dot{background:var(--want);}
+.dot.busy-have{background:var(--have); border-radius:50%;}

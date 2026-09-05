@@ -83,6 +83,13 @@ never overwrites anything: a banner offers *open as them* or *merge into mine*, 
 written until you choose. Links carry a fingerprint of the lineup they were built from, so a link
 made against different data is reported as stale instead of silently decoded into the wrong sets.
 
+**Busy-then markers.** Anything you haven't picked that runs into something you have is marked
+inline — a red dot for "Have to see Bikini Kill then", blue for a want. This is aimed at the
+recurring arts: Bellingham Buddies plays six times a day and the only question that matters is
+which of those slots is still open. The **Free** filter takes it further and shows only sets that
+clash with nothing you've picked, so a filled-up day gets shorter as you plan. Drop-ins are left
+out of the calculation on both sides, since their slot moves anyway.
+
 **Search and filters.** Search over artist and stage names (accent-insensitive; `/` focuses it,
 Escape clears). Filter by what you picked (*Have*, *Have + want*), by category (Music/Arts) and by
 stage — which is also how you get "just comedy", since comedy is a stage here rather than a

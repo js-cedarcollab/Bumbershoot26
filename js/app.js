@@ -146,11 +146,13 @@ function normalize(text) {
   return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
 }
 
-function matchesFilter(entry, tier) {
+function matchesFilter(entry, tier, busy) {
   if (category !== "All" && entry.category !== category) return false;
   if (stageFilter !== "All" && entry.stage !== stageFilter) return false;
   if (tierFilter === "have" && tier !== "have") return false;
   if (tierFilter === "picked" && !tier) return false;
+  // "Free" is for filling gaps: things you haven't picked that clash with nothing.
+  if (tierFilter === "free" && (tier || busy?.has(entry.id))) return false;
   if (!query) return true;
   const needle = normalize(query);
   return normalize(entry.name).includes(needle) || normalize(entry.stage).includes(needle);
@@ -174,7 +176,7 @@ function highlight(text) {
   return `${escapeHtml(text.slice(0, start))}<mark>${escapeHtml(text.slice(start, end))}</mark>${escapeHtml(text.slice(end))}`;
 }
 
-function rowHtml(item, { conflicts, tight, nowMin }) {
+function rowHtml(item, { conflicts, tight, busy, nowMin }) {
   const { entry, tier, displayStart, displayEnd, slotted } = item;
   const classes = ["row"];
   if (tier) classes.push(tier);
@@ -185,6 +187,13 @@ function rowHtml(item, { conflicts, tight, nowMin }) {
   const realWindow = `${formatMin(entry.startMin)}–${formatMin(entry.endMin)}`;
   const sub = slotted
     ? `<span class="sub">(drop in anytime, actually runs ${escapeHtml(realWindow)})</span>`
+    : "";
+
+  const clash = tier ? null : busy?.get(entry.id);
+  const busyNote = clash
+    ? `<span class="busy-flag busy-${clash.tier}"><span class="dot"></span>${
+        clash.tier === "have" ? "Have to see" : "Want to see"
+      } ${escapeHtml(clash.name)} then</span>`
     : "";
 
   const walk = tight?.get(entry.id);
@@ -206,6 +215,7 @@ function rowHtml(item, { conflicts, tight, nowMin }) {
         ${entry.isFlexible && !slotted ? '<span class="cat-tag flex-tag">Drop in</span>' : ""}
         <span class="live-flag"><span class="dot"></span>ON NOW</span>
         <span class="conflict-flag"><span class="dot"></span>Overlaps another pick</span>
+        ${busyNote}
         ${walkNote}
       </span>
     </span>
@@ -225,9 +235,9 @@ function render({ preserveScroll = false } = {}) {
 
   // Plan against the whole day: filtering is a view, so hiding rows must never
   // change which gaps are open or which picks clash.
-  const { timeline, parked, conflicts, tight } = planDay(entries, picks, nowMin);
-  const shownTimeline = timeline.filter((it) => matchesFilter(it.entry, it.tier));
-  const shownParked = parked.filter((it) => matchesFilter(it.entry, it.tier));
+  const { timeline, parked, conflicts, tight, busy } = planDay(entries, picks, nowMin);
+  const shownTimeline = timeline.filter((it) => matchesFilter(it.entry, it.tier, busy));
+  const shownParked = parked.filter((it) => matchesFilter(it.entry, it.tier, busy));
 
   const anchor = nowMin == null || filtering() ? null : nowMin - ANCHOR_LOOKBACK;
   let html = "";
@@ -238,7 +248,7 @@ function render({ preserveScroll = false } = {}) {
       html += nowLineHtml();
       placedNowLine = true;
     }
-    html += rowHtml(item, { conflicts, tight, nowMin });
+    html += rowHtml(item, { conflicts, tight, busy, nowMin });
   }
   // Everything today has already started — the anchor sits at the end of the day.
   if (!placedNowLine) html += nowLineHtml();
@@ -251,7 +261,7 @@ function render({ preserveScroll = false } = {}) {
     for (const item of shownParked) {
       html += rowHtml(
         { ...item, displayStart: item.entry.startMin, displayEnd: item.entry.endMin, slotted: false },
-        { conflicts, tight, nowMin: null }
+        { conflicts, tight, busy, nowMin: null }
       );
     }
   }
@@ -750,6 +760,10 @@ function init() {
   showImportBanner();
   selectDay(todayDay() || "Sat");
   if (!profiles.active && !pendingImport) openChooser();
+
+  // Ask the browser to treat these picks as worth keeping. Browsers may evict
+  // "best effort" storage when a disk fills up; persisted storage survives that.
+  navigator.storage?.persist?.().catch(() => {});
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});

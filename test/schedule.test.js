@@ -202,3 +202,89 @@ test("planDay reports tight turnarounds alongside conflicts", () => {
   const { tight } = planDay(entries, { dacus: "have", molchat: "want" }, null);
   assert.equal(tight.get("molchat").minutes, 5);
 });
+
+const { findBusyMarks } = require("../js/schedule.js");
+
+test("an unpicked set overlapping a HAVE is marked busy with that pick's name", () => {
+  const marks = findBusyMarks([
+    item({ id: "kill", start: at(18, 15), end: at(19, 15) }),
+    item({ id: "puppets", start: at(18, 30), end: at(19), tier: null }),
+  ]);
+  assert.deepEqual(marks.get("puppets"), { tier: "have", name: "kill" });
+});
+
+test("a WANT clash is reported, but a HAVE clash wins when both overlap", () => {
+  const wantOnly = findBusyMarks([
+    item({ id: "maybe", start: at(18), end: at(19), tier: "want" }),
+    item({ id: "puppets", start: at(18, 30), end: at(19), tier: null }),
+  ]);
+  assert.equal(wantOnly.get("puppets").tier, "want");
+
+  const both = findBusyMarks([
+    item({ id: "maybe", start: at(18), end: at(19), tier: "want" }),
+    item({ id: "must", start: at(18, 45), end: at(19, 30) }),
+    item({ id: "puppets", start: at(18, 50), end: at(19, 20), tier: null }),
+  ]);
+  assert.deepEqual(both.get("puppets"), { tier: "have", name: "must" });
+});
+
+test("a free slot is not marked", () => {
+  const marks = findBusyMarks([
+    item({ id: "kill", start: at(18, 15), end: at(19, 15) }),
+    item({ id: "puppets", start: at(19, 30), end: at(20), tier: null }),
+  ]);
+  assert.equal(marks.has("puppets"), false);
+});
+
+test("touching times are not a clash", () => {
+  const marks = findBusyMarks([
+    item({ id: "kill", start: at(18), end: at(19) }),
+    item({ id: "puppets", start: at(19), end: at(19, 30), tier: null }),
+  ]);
+  assert.equal(marks.size, 0);
+});
+
+test("picked rows are never marked busy — they already show conflicts", () => {
+  const marks = findBusyMarks([
+    item({ id: "a", start: at(18), end: at(19) }),
+    item({ id: "b", start: at(18, 30), end: at(19, 30), tier: "want" }),
+  ]);
+  assert.equal(marks.size, 0);
+});
+
+test("movable drop-ins neither block nor get blocked", () => {
+  const dropInAsBlocker = findBusyMarks([
+    item({ id: "dropin", start: at(18), end: at(19), slotted: true }),
+    item({ id: "puppets", start: at(18, 30), end: at(19), tier: null }),
+  ]);
+  assert.equal(dropInAsBlocker.size, 0);
+
+  const flexible = [
+    item({ id: "kill", start: at(18), end: at(19) }),
+    item({ id: "cats", start: at(18, 30), end: at(19), tier: null }),
+  ];
+  flexible[1].entry.isFlexible = true;
+  assert.equal(findBusyMarks(flexible).size, 0);
+});
+
+test("recurring sets are marked per occurrence, so the free ones stand out", () => {
+  const times = [at(14), at(15), at(16), at(17)];
+  const items = times.map((t, i) => item({ id: `buddies${i}`, start: t, end: t + 30, tier: null }));
+  items.push(item({ id: "headliner", start: at(15, 15), end: at(16, 15) }));
+  const marks = findBusyMarks(items);
+  assert.deepEqual(
+    items.filter((it) => !it.tier && !marks.has(it.entry.id)).map((it) => it.entry.id),
+    ["buddies0", "buddies3"]
+  );
+});
+
+test("planDay reports busy marks over the real lineup", () => {
+  const sat = SCHEDULE.filter((e) => e.day === "Sat");
+  const kill = sat.find((e) => e.name === "Bikini Kill");
+  const { busy } = planDay(sat, { [kill.id]: "have" }, null);
+  const clashing = sat.filter(
+    (e) => !e.isFlexible && e.id !== kill.id && e.startMin < kill.endMin && kill.startMin < e.endMin
+  );
+  assert.ok(clashing.length > 0);
+  for (const e of clashing) assert.deepEqual(busy.get(e.id), { tier: "have", name: "Bikini Kill" });
+});

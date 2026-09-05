@@ -107,6 +107,37 @@ function findTightTurnarounds(items, gapMinutes = TIGHT_TURNAROUND) {
   return tight;
 }
 
+/**
+ * For everything you *haven't* picked: is that time already spoken for?
+ *
+ * The recurring arts sets are the reason this exists — Bellingham Buddies plays
+ * six times a day, and the only thing that matters when choosing between them
+ * is which slots are still free. Returns id -> { tier, name } for the pick it
+ * runs into, preferring a 'have' clash over a 'want' one since that's the
+ * harder thing to move.
+ *
+ * Drop-ins are left out on both sides: their slot is movable, so neither
+ * marking them busy nor treating them as a blocker tells the truth.
+ */
+function findBusyMarks(items) {
+  const commitments = items.filter((it) => it.tier && !it.slotted);
+  const marks = new Map();
+
+  for (const item of items) {
+    if (item.tier || item.entry.isFlexible) continue;
+    let best = null;
+    for (const taken of commitments) {
+      if (!overlaps(item.displayStart, item.displayEnd, taken.displayStart, taken.displayEnd)) continue;
+      if (!best || (best.tier === "want" && taken.tier === "have")) {
+        best = { tier: taken.tier, name: taken.entry.name };
+        if (best.tier === "have") break;
+      }
+    }
+    if (best) marks.set(item.entry.id, best);
+  }
+  return marks;
+}
+
 /** Ids of picked items whose display times overlap each other. */
 function computeConflicts(items) {
   const picked = items.filter((it) => it.tier);
@@ -181,6 +212,7 @@ function planDay(entries, picks, nowMin) {
     parked,
     conflicts: computeConflicts(timeline),
     tight: findTightTurnarounds(timeline),
+    busy: findBusyMarks(timeline),
   };
 }
 
@@ -195,6 +227,7 @@ if (typeof module !== "undefined" && module.exports) {
     suggestSlot,
     computeConflicts,
     findTightTurnarounds,
+    findBusyMarks,
     planDay,
   };
 }
