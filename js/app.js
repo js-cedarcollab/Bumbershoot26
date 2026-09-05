@@ -832,6 +832,14 @@ function init() {
   const stageSelect = document.getElementById("stage-filter");
   stageSelect.addEventListener("change", () => setStage(stageSelect.value));
 
+  const search = document.getElementById("search");
+  search.addEventListener("input", () => setQuery(search.value.trim()));
+  document.getElementById("search-clear").addEventListener("click", () => {
+    search.value = "";
+    setQuery("");
+    search.focus();
+  });
+
   const panel = document.getElementById("filter-panel");
   const panelBtn = document.getElementById("filters-btn");
   panelBtn.addEventListener("click", () => {
