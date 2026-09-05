@@ -98,6 +98,10 @@ let query = "";
 let category = "All";
 let tierFilter = "all";
 let stageFilter = "All";
+let recFilter = "all";
+
+/** The Stranger's picks, keyed by entry id. Empty unless js/recs.js is filled in. */
+let recsById = new Map();
 
 /** How far ahead the "up next" nudge looks, in minutes. */
 const UPCOMING_WINDOW = 20;
@@ -148,6 +152,7 @@ function normalize(text) {
 
 function matchesFilter(entry, tier, busy) {
   if (category !== "All" && entry.category !== category) return false;
+  if (recFilter !== "all" && !recsById.get(entry.id)?.[recFilter]) return false;
   if (stageFilter !== "All" && entry.stage !== stageFilter) return false;
   if (tierFilter === "have" && tier !== "have") return false;
   if (tierFilter === "picked" && !tier) return false;
@@ -159,7 +164,7 @@ function matchesFilter(entry, tier, busy) {
 }
 
 const filtering = () =>
-  query !== "" || category !== "All" || stageFilter !== "All" || tierFilter !== "all";
+  query !== "" || category !== "All" || stageFilter !== "All" || tierFilter !== "all" || recFilter !== "all";
 
 // ------------------------------------------------------------------ rendering
 
@@ -196,6 +201,17 @@ function rowHtml(item, { conflicts, tight, busy, nowMin }) {
       } ${escapeHtml(clash.name)} then</span>`
     : "";
 
+  const rec = recsById.get(entry.id);
+  const recTags = rec
+    ? `${rec.star ? '<span class="rec-tag star">★ Stranger pick</span>' : ""}${
+        rec.local ? '<span class="rec-tag local">Local</span>' : ""
+      }`
+    : "";
+  // Their words, clearly theirs, with a way through to the original.
+  const blurb = rec?.blurb
+    ? `<span class="rec-blurb">“${escapeHtml(rec.blurb)}” <span class="rec-credit">— The Stranger</span></span>`
+    : "";
+
   const walk = tight?.get(entry.id);
   const walkNote = walk
     ? `<span class="tight-flag">${walk.minutes === 0 ? "No gap" : `${walk.minutes} min`} after ${escapeHtml(
@@ -210,8 +226,10 @@ function rowHtml(item, { conflicts, tight, busy, nowMin }) {
       <span class="name-line"><span class="name">${highlight(entry.name)}</span></span>
       <span class="stage">(${highlight(entry.stage)})</span>
       ${sub}
+      ${blurb}
       <span class="meta-row">
         <span class="cat-tag">${escapeHtml(entry.category)}</span>
+        ${recTags}
         ${entry.isFlexible && !slotted ? '<span class="cat-tag flex-tag">Drop in</span>' : ""}
         <span class="live-flag"><span class="dot"></span>ON NOW</span>
         <span class="conflict-flag"><span class="dot"></span>Overlaps another pick</span>
@@ -344,6 +362,20 @@ function updateUpNext(timeline, nowMin) {
           : ""
       }
     </button>`;
+}
+
+/**
+ * Fold in The Stranger's picks if js/recs.js has any. Unmatched names are
+ * logged rather than ignored — a silently missing rec is worse than a loud one.
+ */
+function loadRecs() {
+  if (typeof STRANGER_RECS === "undefined" || !STRANGER_RECS.length) return;
+  const { byId, unmatched } = matchRecs(SCHEDULE, STRANGER_RECS);
+  recsById = byId;
+  if (unmatched.length) {
+    console.warn(`No set in the lineup matches these recs: ${unmatched.join(", ")}`);
+  }
+  document.getElementById("rec-filters").hidden = false;
 }
 
 /** Every stage in the lineup, for the stage filter. */
@@ -600,6 +632,12 @@ function setTier(value) {
   afterFilterChange();
 }
 
+function setRec(value) {
+  recFilter = value;
+  document.querySelectorAll(".rec-btn").forEach((b) => b.classList.toggle("active", b.dataset.rec === value));
+  afterFilterChange();
+}
+
 function setStage(value) {
   stageFilter = value;
   document.getElementById("stage-filter").value = value;
@@ -613,6 +651,8 @@ function clearFilters() {
   category = "All";
   tierFilter = "all";
   stageFilter = "All";
+  recFilter = "all";
+  document.querySelectorAll(".rec-btn").forEach((b) => b.classList.toggle("active", b.dataset.rec === "all"));
   document.querySelectorAll(".cat-btn").forEach((b) => b.classList.toggle("active", b.dataset.cat === "All"));
   document.querySelectorAll(".tier-btn").forEach((b) => b.classList.toggle("active", b.dataset.tier === "all"));
   document.getElementById("stage-filter").value = "All";
@@ -691,6 +731,9 @@ function init() {
   document.querySelectorAll(".tier-btn").forEach((btn) => {
     btn.addEventListener("click", () => setTier(btn.dataset.tier));
   });
+  document.querySelectorAll(".rec-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setRec(btn.dataset.rec));
+  });
   const stageSelect = document.getElementById("stage-filter");
   stageSelect.addEventListener("change", () => setStage(stageSelect.value));
   document.getElementById("upnext").addEventListener("click", (event) => {
@@ -755,6 +798,7 @@ function init() {
   // Keep "ended", "on now" and the divider honest without a page reload.
   setInterval(() => render({ preserveScroll: true }), 60000);
 
+  loadRecs();
   populateStages();
   updateWho();
   showImportBanner();

@@ -2,7 +2,7 @@
  * Cache-first service worker so the schedule opens instantly and keeps working
  * when the festival grounds eat your signal. Bump CACHE when files change.
  */
-const CACHE = "bumbershoot2026-v4";
+const CACHE = "bumbershoot2026-v5";
 const ASSETS = [
   "./",
   "./index.html",
@@ -10,6 +10,7 @@ const ASSETS = [
   "./js/data.js",
   "./js/schedule.js",
   "./js/share.js",
+  "./js/recs.js",
   "./js/app.js",
   "./manifest.webmanifest",
   "./icon.svg",

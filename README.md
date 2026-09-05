@@ -96,6 +96,30 @@ stage — which is also how you get "just comedy", since comedy is a stage here 
 category. Filters compose, and they're view-only: hiding rows never changes which gaps are open or
 which picks clash.
 
+## The Stranger's picks (optional overlay)
+
+`js/recs.js` can flag acts that The Stranger starred ("Stranger recommends") or marked as local.
+Fill in `STRANGER_RECS` and star/local badges appear on the rows, along with a **★ Picks / Local**
+filter that composes with the others. Leave it empty and the whole feature stays hidden.
+
+```js
+const STRANGER_RECS = [
+  { name: "Turnstile",  star: true,              url: STRANGER_SOURCES.Music.Sat },
+  { name: "Oblé Reed",  star: true, local: true, url: STRANGER_SOURCES.Music.Sat },
+];
+```
+
+Names are matched loosely — casing, punctuation, accents and `&` vs `and` all survive, and "WITCH"
+finds "W.I.T.C.H." One entry covers every set that act plays, which is what you want for the arts
+acts that recur all weekend. Any name matching nothing in the lineup is reported in the browser
+console at startup and fails `npm test`, so a typo or a renamed act can't slip through silently.
+
+**On their descriptions.** Which acts got a star is a fact about their coverage; the writing next to
+those stars is their work. Each rec takes a `url` so the app can point readers at the original
+article, and `blurb` exists for a *short* quote if you want one — it renders in quotation marks
+credited to The Stranger. Publishing their descriptions wholesale on a public site is a different
+thing from linking to them, so the shipped file has none.
+
 ## Editing the lineup
 
 `js/data.js` holds the raw lineup exactly as it came off the festival's schedule, plus:
@@ -130,6 +154,7 @@ css/app.css         all styling
 js/data.js          lineup data, flexible flags, normalizer
 js/schedule.js      gap-finding, slot suggestion, conflicts, travel time (pure, tested)
 js/share.js         share-link encoding and lineup fingerprint (pure, tested)
+js/recs.js          optional Stranger picks overlay and name matching (pure, tested)
 js/app.js           people, storage, rendering, "now" anchoring, filters, interaction
 sw.js               offline cache
 test/               node --test suite

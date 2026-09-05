@@ -354,3 +354,25 @@ mark{background:rgba(255,210,63,.22); color:inherit; border-radius:2px;}
 .busy-want{color:var(--want);}
 .busy-want .dot{background:var(--want);}
 .dot.busy-have{background:var(--have); border-radius:50%;}
+
+/* ------------------------------------------------- The Stranger's overlay */
+.rec-tag{
+  font-size:9.5px; font-weight:700;
+  border-radius:3px; padding:1px 5px;
+  border:1px solid transparent;
+}
+.rec-tag.star{color:var(--conflict); border-color:rgba(255,210,63,.35);}
+.rec-tag.local{color:var(--want); border-color:rgba(85,199,219,.35);}
+.rec-btn{
+  background:none; border:none; color:var(--dim);
+  font:inherit; font-size:11.5px; font-weight:600;
+  padding:7px 10px; cursor:pointer;
+}
+.rec-btn + .rec-btn{border-left:1px solid var(--line);}
+.rec-btn.active{background:var(--row-hover); color:var(--text);}
+.rec-blurb{
+  display:block; margin-top:4px;
+  font-size:11.5px; line-height:1.45; color:var(--dim);
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+}
+.rec-credit{color:var(--dim2); font-style:normal;}
