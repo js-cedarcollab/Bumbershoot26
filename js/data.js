@@ -198,6 +198,11 @@ function formatMin(min) {
   return `${h}:${String(m).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
 }
 
+/** Compact time for pasting into a message: "6:15p". */
+function formatShort(min) {
+  return formatMin(min).replace(":00", ":00").replace(" AM", "a").replace(" PM", "p");
+}
+
 function slugify(s) {
   return s
     .toLowerCase()
@@ -219,7 +224,7 @@ const SCHEDULE = RAW.map((r) => ({
 })).sort((a, b) => a.startMin - b.startMin || a.name.localeCompare(b.name));
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { RAW, SCHEDULE, FLEXIBLE_KEYS, parseMin, formatMin, slugify, stageOptions };
+  module.exports = { RAW, SCHEDULE, FLEXIBLE_KEYS, parseMin, formatMin, formatShort, slugify, stageOptions };
 }
 
 /**

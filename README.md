@@ -22,6 +22,10 @@ page can also be installed from the address bar, so it gets its own window and i
 
 ## Run it
 
+The service worker is network-first with a 2.5-second timeout, so a refresh always shows the code
+you just pushed and a dead signal on the festival grounds falls back to the cached copy rather than
+hanging.
+
 Locally — any static file server will do:
 
 ```bash
@@ -96,9 +100,22 @@ clash with nothing you've picked, so a filled-up day gets shorter as you plan. D
 out of the calculation on both sides, since their slot moves anyway.
 
 **Copy my agenda.** For friends who want your plan but not your app: *Copy my agenda as text* in
-the name menu builds a plain-text list of both days' picks, in order, with wants, clashes and
-drop-ins called out the way the screen calls them out. Paste it into a message and it reads as an
-agenda rather than a link.
+the name menu builds a deliberately thin list — a time and a name per line, because it gets read in
+a text message.
+
+```
+Jesse's Bumbershoot 2026
+
+Saturday
+12:30p Motley Zoo Animal Rescue (anytime)
+5:00p Peaches (maybe)
+6:15p Bikini Kill
+```
+
+No stages, no end times, no clash warnings: those are for the person doing the planning, not the
+person being told where you'll be. The only two annotations that survive are the ones that would
+otherwise mislead — a maybe isn't a promise, and a drop-in's time is the app's suggestion rather
+than a set time.
 
 **Search and filters.** The legend is the filter: *Have to see* and *Want to see* are independent
 toggles, and *Conflicts* and *Free time* are whole views that replace a tier selection rather than

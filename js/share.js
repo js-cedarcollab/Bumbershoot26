@@ -71,40 +71,27 @@ function decodePicks(schedule, payload) {
 
 /**
  * A plain-text agenda for one day — for the friends who want your plan but not
- * your app. Chronological, one line per pick, with clashes and drop-ins called
- * out so the text carries the same warnings the screen does.
+ * your app.
  *
- * `formatTime` is passed in rather than imported so this stays pure.
+ * Deliberately thin: a time and a name per line, because this gets read in a
+ * text message. No stages, no end times, no clash warnings — those are for the
+ * person doing the planning, not the person being told where you'll be. The
+ * only annotations that survive are the two that would otherwise mislead:
+ * a maybe is not a promise, and a drop-in's time is a suggestion, not a set.
  */
 function agendaForDay(label, plan, formatTime) {
   const lines = [label];
   const picked = plan.timeline.filter((it) => it.tier);
 
-  if (!picked.length) {
-    lines.push("  nothing picked yet");
+  if (!picked.length && !plan.parked.some((it) => it.tier)) {
+    lines.push("nothing picked yet");
   }
   for (const item of picked) {
-    const notes = [];
-    if (item.tier === "want") notes.push("want to see");
-    if (item.slotted) notes.push("drop in anytime");
-    if (plan.conflicts.has(item.entry.id)) notes.push("overlaps another pick");
-    lines.push(
-      `  ${formatTime(item.displayStart)}–${formatTime(item.displayEnd)}  ${item.entry.name} · ${
-        item.entry.stage
-      }${notes.length ? `  (${notes.join(", ")})` : ""}`
-    );
+    const note = item.slotted ? " (anytime)" : item.tier === "want" ? " (maybe)" : "";
+    lines.push(`${formatTime(item.displayStart)} ${item.entry.name}${note}`);
   }
-
-  const flexible = plan.parked.filter((it) => it.tier);
-  if (flexible.length) {
-    lines.push("  — fit in when you can —");
-    for (const item of flexible) {
-      lines.push(
-        `  ${formatTime(item.entry.startMin)}–${formatTime(item.entry.endMin)}  ${item.entry.name} · ${
-          item.entry.stage
-        }  (drop in anytime)`
-      );
-    }
+  for (const item of plan.parked.filter((it) => it.tier)) {
+    lines.push(`${formatTime(item.entry.startMin)} ${item.entry.name} (anytime)`);
   }
   return lines.join("\n");
 }

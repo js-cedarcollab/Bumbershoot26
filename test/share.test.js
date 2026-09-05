@@ -55,7 +55,7 @@ test("a truncated payload decodes what it can without throwing", () => {
 
 const { agendaForDay } = require("../js/share.js");
 const { planDay } = require("../js/schedule.js");
-const { formatMin } = require("../js/data.js");
+const { formatShort } = require("../js/data.js");
 
 const satPlan = (names) => {
   const day = SCHEDULE.filter((e) => e.day === "Sat");
@@ -66,47 +66,58 @@ const satPlan = (names) => {
   return planDay(day, picks, null);
 };
 
-test("the agenda lists picks in order with times and stages", () => {
-  const text = agendaForDay("SATURDAY", satPlan({ "Bikini Kill": "have", Turnstile: "have" }), formatMin);
-  const lines = text.split("\n");
-  assert.equal(lines[0], "SATURDAY");
-  assert.match(lines[1], /6:15 PM–7:15 PM {2}Bikini Kill · Mural Stage/);
-  assert.match(lines[2], /10:15 PM–11:30 PM {2}Turnstile · Fisher Stage/);
+test("the agenda is one line per pick: time, then name", () => {
+  const text = agendaForDay("Saturday", satPlan({ "Bikini Kill": "have", Turnstile: "have" }), formatShort);
+  assert.deepEqual(text.split("\n"), ["Saturday", "6:15p Bikini Kill", "10:15p Turnstile"]);
 });
 
-test("wants, clashes and drop-ins are called out in the text", () => {
+test("stages, end times and clash warnings stay out of the text", () => {
   const text = agendaForDay(
-    "SATURDAY",
-    satPlan({ "Bikini Kill": "have", "Lucy Dacus": "have", Peaches: "want", "Motley Zoo Animal Rescue": "have" }),
-    formatMin
+    "Saturday",
+    satPlan({ "Bikini Kill": "have", "Lucy Dacus": "have" }),
+    formatShort
   );
-  assert.match(text, /Peaches · Mural Stage {2}\(want to see\)/);
-  assert.match(text, /Bikini Kill · Mural Stage {2}\(overlaps another pick\)/);
-  assert.match(text, /Motley Zoo Animal Rescue · Cat Circus {2}\(drop in anytime\)/);
+  assert.equal(text.includes("Mural Stage"), false);
+  assert.equal(text.includes("overlaps"), false);
+  assert.equal(text.includes("–"), false, "no end times");
+});
+
+test("a maybe is marked, because it isn't a promise", () => {
+  const text = agendaForDay("Saturday", satPlan({ Peaches: "want", Turnstile: "have" }), formatShort);
+  assert.match(text, /^5:00p Peaches \(maybe\)$/m);
+  assert.match(text, /^10:15p Turnstile$/m);
+});
+
+test("a drop-in's suggested time is marked, because it isn't a set time", () => {
+  const text = agendaForDay("Saturday", satPlan({ "Motley Zoo Animal Rescue": "have" }), formatShort);
+  assert.match(text, /Motley Zoo Animal Rescue \(anytime\)/);
 });
 
 test("unpicked sets never reach the agenda", () => {
-  const text = agendaForDay("SATURDAY", satPlan({ Turnstile: "have" }), formatMin);
+  const text = agendaForDay("Saturday", satPlan({ Turnstile: "have" }), formatShort);
   assert.equal(text.split("\n").length, 2);
   assert.equal(text.includes("Bikini Kill"), false);
 });
 
 test("a day with no picks says so rather than printing an empty list", () => {
-  const text = agendaForDay("SUNDAY", planDay(SCHEDULE.filter((e) => e.day === "Sun"), {}, null), formatMin);
-  assert.deepEqual(text.split("\n"), ["SUNDAY", "  nothing picked yet"]);
+  const text = agendaForDay("Sunday", planDay(SCHEDULE.filter((e) => e.day === "Sun"), {}, null), formatShort);
+  assert.deepEqual(text.split("\n"), ["Sunday", "nothing picked yet"]);
 });
 
-test("a flexible pick with nowhere to slot still appears, under its own heading", () => {
+test("a flexible pick with nowhere to slot still appears, marked anytime", () => {
   const day = SCHEDULE.filter((e) => e.day === "Sat");
   const cats = day.find((e) => e.name === "Motley Zoo Animal Rescue");
-  // Fill the whole window so the drop-in cannot be placed in the timeline.
   const picks = { [cats.id]: "have" };
   for (const e of day) {
     if (!e.isFlexible && e.startMin >= cats.startMin && e.endMin <= cats.endMin) picks[e.id] = "have";
   }
   const plan = planDay(day, picks, null);
   assert.ok(plan.parked.some((it) => it.entry.id === cats.id), "the drop-in should be parked");
-  const text = agendaForDay("SATURDAY", plan, formatMin);
-  assert.match(text, /— fit in when you can —/);
-  assert.match(text, /Motley Zoo Animal Rescue · Cat Circus {2}\(drop in anytime\)/);
+  assert.match(agendaForDay("Saturday", plan, formatShort), /Motley Zoo Animal Rescue \(anytime\)/);
+});
+
+test("compact times read unambiguously across the festival day", () => {
+  assert.equal(formatShort(12 * 60 + 30), "12:30p");
+  assert.equal(formatShort(17 * 60), "5:00p");
+  assert.equal(formatShort(23 * 60 + 30), "11:30p");
 });

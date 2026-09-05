@@ -569,7 +569,7 @@ function openShare() {
 
 /** Both days as plain text, for pasting into a message. */
 function buildAgenda() {
-  const labels = { Sat: "SATURDAY, SEP 5", Sun: "SUNDAY, SEP 6" };
+  const labels = { Sat: "Saturday", Sun: "Sunday" };
   const who = profiles.active ? `${profiles.active}'s Bumbershoot 2026` : "Bumbershoot 2026";
   const parts = [who];
   for (const day of ["Sat", "Sun"]) {
@@ -578,7 +578,7 @@ function buildAgenda() {
     const anyPicks = plan.timeline.concat(plan.parked).some((it) => it.tier);
     if (!anyPicks) continue;
     parts.push("");
-    parts.push(agendaForDay(labels[day], plan, formatMin));
+    parts.push(agendaForDay(labels[day], plan, formatShort));
   }
   if (parts.length === 1) parts.push("", "Nothing picked yet.");
   return parts.join("\n");
@@ -586,13 +586,12 @@ function buildAgenda() {
 
 function openAgenda() {
   const text = buildAgenda();
-  const lines = text.split("\n").filter((l) => l.startsWith("  ") && !l.includes("—  ")).length;
   openSheet(
     "Copy my agenda",
     `<div class="sheet-note">Plain text, for people who'd rather have a list than a link.${
-      lines ? "" : " You haven't picked anything yet."
+      Object.keys(picks).length ? "" : " You haven't picked anything yet."
     }</div>
-     <textarea class="share-box agenda-box" id="share-box" readonly rows="12">${escapeHtml(text)}</textarea>
+     <textarea class="share-box agenda-box" id="share-box" readonly rows="10">${escapeHtml(text)}</textarea>
      <button type="button" class="sheet-go wide" data-action="copy">Copy agenda</button>`
   );
 }
